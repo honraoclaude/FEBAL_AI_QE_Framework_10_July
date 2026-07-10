@@ -22,8 +22,12 @@ export function AgentsPage() {
       <div className="card">
         <div className="section-title">Agent Catalog</div>
         <div className="sub" style={{ marginTop: 4 }}>
-          {agents.data?.length ?? 0} AI agents orchestrated across the delivery lifecycle. Gatekeepers block progression; every decision carries the full
+          {agents.data?.length ?? 0} agents orchestrated across the delivery lifecycle. Gatekeepers block progression; every decision carries the full
           governance envelope.
+        </div>
+        <div className="row" style={{ marginTop: 10, gap: 8 }}>
+          <span className="badge accent">🤖 {(agents.data ?? []).filter((a) => a.execution === 'AI_ASSISTED').length} AI-assisted — deterministic core + LLM reasoning</span>
+          <span className="badge">⚙ {(agents.data ?? []).filter((a) => a.execution === 'DETERMINISTIC').length} scripted — pure rule-based logic, no LLM call</span>
         </div>
       </div>
       {PHASES.map((phase) => {
@@ -45,6 +49,11 @@ export function AgentsPage() {
                     </div>
                     <div style={{ fontSize: 12, color: 'var(--text-muted)', margin: '6px 0' }}>{agent.description}</div>
                     <div className="row" style={{ gap: 6 }}>
+                      {agent.execution === 'AI_ASSISTED' ? (
+                        <span className="badge accent" title="Deterministic core enriched with LLM reasoning">🤖 AI-assisted</span>
+                      ) : (
+                        <span className="badge" title="Pure scripted logic — no LLM call">⚙ scripted</span>
+                      )}
                       {agent.gatekeeper && <span className="badge warning">gatekeeper</span>}
                       {agent.tags.map((tag) => (
                         <span key={tag} className="badge">

@@ -13,6 +13,13 @@ export type AgentPhase =
 
 export type AgentStatus = 'IDLE' | 'RUNNING' | 'DEGRADED' | 'ERROR' | 'DISABLED';
 
+/**
+ * How the agent computes its decision:
+ * - DETERMINISTIC: pure scripted/rule-based logic; no LLM call is made.
+ * - AI_ASSISTED: deterministic core enriched with LLM reasoning (provider-dependent).
+ */
+export type AgentExecution = 'DETERMINISTIC' | 'AI_ASSISTED';
+
 export interface AgentDefinition {
   /** Stable kebab-case identifier, e.g. `story-analysis`. */
   id: string;
@@ -26,6 +33,8 @@ export interface AgentDefinition {
   promptId: string;
   /** True when the agent blocks progression (gatekeepers). */
   gatekeeper: boolean;
+  /** Whether the agent is pure script or AI-enriched (see AgentExecution). */
+  execution: AgentExecution;
   /** Roles allowed to approve/override this agent's decisions. */
   approverRoles: Role[];
   tags: string[];

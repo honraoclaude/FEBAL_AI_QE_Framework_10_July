@@ -52,11 +52,12 @@ export abstract class BaseAgent<TPayload = unknown> implements Agent<TPayload> {
   async execute(context: AgentContext): Promise<AgentDecision<TPayload>> {
     const result = await this.analyze(context);
     let promptVersion = 'n/a';
-    let llmVersion = context.llm.model;
+    let llmVersion = this.definition.execution === 'DETERMINISTIC' ? 'deterministic' : context.llm.model;
     let reasoning = result.reasoning;
 
     // LLM enrichment: heuristic result + retrieved knowledge become the prompt.
-    try {
+    // DETERMINISTIC agents are pure script — no model call is made (or billed).
+    if (this.definition.execution !== 'DETERMINISTIC') try {
       const knowledge = context.memory
         .retrieve(context.tenantId, `${this.definition.name} ${context.subjectId}`, 3)
         .map((k) => `- [${k.document.source}] ${k.chunk.slice(0, 200)}`)

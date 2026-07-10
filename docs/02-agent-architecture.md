@@ -75,9 +75,26 @@ recommended action, alternatives, approval status, prompt/LLM/knowledge
 versions, timestamp, version. Nothing an agent produces is actionable without
 the envelope.
 
+### Execution classification
+
+Every agent declares `execution` in its catalog entry, enforced by the kernel
+and labelled throughout the UI:
+
+- **`AI_ASSISTED`** (🤖) — deterministic core enriched with LLM reasoning.
+  All judgement/analysis agents (refinement, reviews, compliance, predictions).
+- **`DETERMINISTIC`** (⚙) — pure scripted logic; the kernel makes **no LLM
+  call at all** (decisions record `llmVersion: deterministic`,
+  `promptVersion: n/a`). The 11 plumbing/execution agents: test-data
+  management, environment readiness, automation execution, deployment, CI/CD,
+  agent health monitor, memory manager, prompt versioning, audit manager,
+  notification manager, metrics.
+
+Each decision additionally records which provider actually ran (`llmVersion`),
+so the UI distinguishes 🤖 live AI, ⚙ offline-simulated, and ⚙ scripted.
+
 ### Hybrid inference
 
-Agents are **deterministic-first, LLM-enriched**:
+AI-assisted agents are **deterministic-first, LLM-enriched**:
 
 - A deterministic domain layer (heuristics per agent: DoR scoring, INVEST
   checks, impact keyword rules, aspect evaluation) guarantees reproducible,

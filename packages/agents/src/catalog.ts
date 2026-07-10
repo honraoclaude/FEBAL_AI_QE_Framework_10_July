@@ -11,7 +11,7 @@ function def(
   name: string,
   phase: AgentPhase,
   description: string,
-  opts: Partial<Pick<AgentDefinition, 'inputs' | 'outputs' | 'gatekeeper' | 'approverRoles' | 'tags'>> = {},
+  opts: Partial<Pick<AgentDefinition, 'inputs' | 'outputs' | 'gatekeeper' | 'approverRoles' | 'tags' | 'execution'>> = {},
 ): AgentDefinition {
   return {
     id,
@@ -22,6 +22,9 @@ function def(
     outputs: opts.outputs ?? ['assessment'],
     promptId: `prompt-${id}`,
     gatekeeper: opts.gatekeeper ?? false,
+    // Judgement/analysis agents are AI-assisted by default; pure plumbing
+    // and execution agents opt into DETERMINISTIC (no LLM call at all).
+    execution: opts.execution ?? 'AI_ASSISTED',
     approverRoles: opts.approverRoles ?? defaultApprovers(phase),
     tags: opts.tags ?? [],
   };
@@ -115,10 +118,10 @@ export const TESTING_AGENTS: AgentDefinition[] = [
   def('security-testing', 'Security Testing Agent', 'TESTING', 'Runs DAST-style checks: authz bypass, injection, session handling.', { approverRoles: ['SECURITY_LEAD'], tags: ['security'] }),
   def('compliance-testing', 'Compliance Testing Agent', 'TESTING', 'Verifies FCA/Consumer Duty evidence exists for regulated journeys.', { approverRoles: ['COMPLIANCE_OFFICER'], tags: ['compliance'] }),
   def('salesforce-integration-testing', 'Salesforce Integration Testing Agent', 'TESTING', 'Tests MuleSoft and external API integrations end-to-end.'),
-  def('test-data-management', 'Test Data Management Agent', 'TESTING', 'Provisions, masks and refreshes environment test data.'),
+  def('test-data-management', 'Test Data Management Agent', 'TESTING', 'Provisions, masks and refreshes environment test data.', { execution: 'DETERMINISTIC' }),
   def('synthetic-data-generator', 'Synthetic Data Generator', 'TESTING', 'Generates GDPR-safe synthetic datasets matching production shape.'),
-  def('environment-readiness', 'Environment Readiness Agent', 'TESTING', 'Validates sandbox metadata parity, integrations and data readiness.'),
-  def('automation-execution', 'Automation Execution Agent', 'TESTING', 'Orchestrates automation suite execution and collects results.'),
+  def('environment-readiness', 'Environment Readiness Agent', 'TESTING', 'Validates sandbox metadata parity, integrations and data readiness.', { execution: 'DETERMINISTIC' }),
+  def('automation-execution', 'Automation Execution Agent', 'TESTING', 'Orchestrates automation suite execution and collects results.', { execution: 'DETERMINISTIC' }),
   def('coverage-analyzer', 'Coverage Analyzer', 'TESTING', 'Maps executed tests to acceptance criteria and risk areas; finds gaps.'),
   def('defect-triage', 'Defect Triage Agent', 'TESTING', 'Classifies defects by severity, component and likely owner.'),
   def('duplicate-defect-detector', 'Duplicate Defect Detector', 'TESTING', 'Detects duplicate/similar defects using semantic matching.'),
@@ -147,8 +150,8 @@ export const RELEASE_AGENTS: AgentDefinition[] = [
 ];
 
 export const DEPLOY_LEARN_AGENTS: AgentDefinition[] = [
-  def('deployment', 'Deployment Agent', 'DEPLOY_LEARN', 'Executes deployment plans across environments with validation steps.'),
-  def('cicd', 'CI/CD Agent', 'DEPLOY_LEARN', 'Manages pipeline execution, quality gates and artifact promotion.'),
+  def('deployment', 'Deployment Agent', 'DEPLOY_LEARN', 'Executes deployment plans across environments with validation steps.', { execution: 'DETERMINISTIC' }),
+  def('cicd', 'CI/CD Agent', 'DEPLOY_LEARN', 'Manages pipeline execution, quality gates and artifact promotion.', { execution: 'DETERMINISTIC' }),
   def('production-validation', 'Production Validation Agent', 'DEPLOY_LEARN', 'Runs post-deploy smoke validation of critical journeys.'),
   def('monitoring', 'Monitoring Agent', 'DEPLOY_LEARN', 'Watches KPIs, error rates and limit consumption post-release.'),
   def('observability', 'Observability Agent', 'DEPLOY_LEARN', 'Correlates traces, logs and events across Salesforce and integrations.'),
@@ -161,20 +164,20 @@ export const DEPLOY_LEARN_AGENTS: AgentDefinition[] = [
 ];
 
 export const GLOBAL_AGENTS: AgentDefinition[] = [
-  def('agent-health-monitor', 'Agent Health Monitor', 'GLOBAL', 'Monitors latency, failure rates, drift and cost of every agent.'),
-  def('memory-manager', 'Memory Manager', 'GLOBAL', 'Curates working and long-term memory: retention, summarisation, eviction.'),
+  def('agent-health-monitor', 'Agent Health Monitor', 'GLOBAL', 'Monitors latency, failure rates, drift and cost of every agent.', { execution: 'DETERMINISTIC' }),
+  def('memory-manager', 'Memory Manager', 'GLOBAL', 'Curates working and long-term memory: retention, summarisation, eviction.', { execution: 'DETERMINISTIC' }),
   def('knowledge-manager', 'Knowledge Manager', 'GLOBAL', 'Owns knowledge ingestion, versioning and quality.'),
   def('prompt-manager', 'Prompt Manager', 'GLOBAL', 'Owns the prompt library, evaluations and rollout of prompt changes.'),
-  def('prompt-versioning', 'Prompt Versioning Agent', 'GLOBAL', 'Tracks prompt versions and links every decision to the version used.'),
+  def('prompt-versioning', 'Prompt Versioning Agent', 'GLOBAL', 'Tracks prompt versions and links every decision to the version used.', { execution: 'DETERMINISTIC' }),
   def('hallucination-detector', 'Hallucination Detector', 'GLOBAL', 'Cross-checks agent claims against evidence and knowledge sources.'),
   def('cost-optimizer', 'Cost Optimizer', 'GLOBAL', 'Optimises model selection and token spend per workload.'),
   def('llm-performance-analyzer', 'LLM Performance Analyzer', 'GLOBAL', 'Tracks model quality, latency and drift across workloads.'),
   def('governance-manager', 'Governance Manager', 'GLOBAL', 'Enforces the governance envelope and explainability requirements.'),
-  def('audit-manager', 'Audit Manager', 'GLOBAL', 'Guards the immutable audit trail and compliance exports.'),
-  def('notification-manager', 'Notification Manager', 'GLOBAL', 'Routes notifications to Slack/Teams/email per subscription rules.'),
+  def('audit-manager', 'Audit Manager', 'GLOBAL', 'Guards the immutable audit trail and compliance exports.', { execution: 'DETERMINISTIC' }),
+  def('notification-manager', 'Notification Manager', 'GLOBAL', 'Routes notifications to Slack/Teams/email per subscription rules.', { execution: 'DETERMINISTIC' }),
   def('security-governance', 'Security Governance Agent', 'GLOBAL', 'Monitors platform security posture, secrets and access reviews.', { approverRoles: ['SECURITY_LEAD'] }),
   def('human-approval', 'Human Approval Agent', 'GLOBAL', 'Manages approval queues, routing, SLAs and escalation.'),
-  def('metrics', 'Metrics Agent', 'GLOBAL', 'Computes quality metrics powering all dashboards.'),
+  def('metrics', 'Metrics Agent', 'GLOBAL', 'Computes quality metrics powering all dashboards.', { execution: 'DETERMINISTIC' }),
 ];
 
 export const PREDICTION_AGENTS: AgentDefinition[] = [

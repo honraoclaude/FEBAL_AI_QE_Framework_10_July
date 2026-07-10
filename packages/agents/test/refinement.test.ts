@@ -149,6 +149,33 @@ describe('QE.ai agent platform', () => {
     expect(audit.query(TENANT, { kind: 'AGENT_DECISION' }).length).toBeGreaterThanOrEqual(7);
   });
 
+  it('classifies agents as scripted vs AI-assisted and skips the LLM for scripted ones', async () => {
+    const { engine, registry } = buildPlatform();
+    const defs = registry.list();
+    const scripted = defs.filter((d) => d.execution === 'DETERMINISTIC');
+    expect(scripted.length).toBe(11);
+    expect(defs.filter((d) => d.execution === 'AI_ASSISTED').length).toBe(defs.length - scripted.length);
+
+    const run = await engine.start({
+      tenantId: TENANT,
+      definitionId: 'deploy-learn',
+      subjectType: 'DEPLOYMENT',
+      subjectId: 'DEP-1',
+      triggeredBy: 'tester',
+    });
+    expect(run.status).toBe('COMPLETED');
+
+    // Scripted agent: no LLM call — no prompt version, no model.
+    const cicd = engine.getDecision(run.steps.find((s) => s.agentId === 'cicd')!.decisionId!)!;
+    expect(cicd.llmVersion).toBe('deterministic');
+    expect(cicd.promptVersion).toBe('n/a');
+
+    // AI-assisted agent in the same run: enriched through the provider.
+    const monitoring = engine.getDecision(run.steps.find((s) => s.agentId === 'monitoring')!.decisionId!)!;
+    expect(monitoring.llmVersion).toBe('simulated-qe-1');
+    expect(monitoring.promptVersion).toBe('1.0');
+  });
+
   it('blocks any further phase while a human approval is pending, and unblocks on resolution', async () => {
     const { engine, approvals } = buildPlatform();
     const refinementRun = await engine.start({

@@ -71,6 +71,17 @@ function JsonBlock({ value }: { value: unknown }) {
   );
 }
 
+/** Labels what actually computed this decision, from the recorded llmVersion. */
+export function ExecutionBadge({ llmVersion }: { llmVersion: string }) {
+  if (llmVersion === 'deterministic') {
+    return <span className="badge" title="Pure scripted logic — no LLM call was made">⚙ scripted</span>;
+  }
+  if (llmVersion.startsWith('simulated')) {
+    return <span className="badge" title="Deterministic core; offline simulated provider (set ANTHROPIC_API_KEY for live AI)">⚙ AI-assisted (offline)</span>;
+  }
+  return <span className="badge accent" title={`Deterministic core + LLM reasoning (${llmVersion})`}>🤖 AI-assisted</span>;
+}
+
 export function DecisionCard({ decision, onFeedback }: { decision: AgentDecision; onFeedback?: (outcome: 'ACCEPTED' | 'REJECTED') => void }) {
   const [heuristicReasoning, modelNarrative] = decision.reasoning.split('\n\nModel narrative:');
   const inputEntries = Object.entries(decision.input ?? {});
@@ -79,6 +90,7 @@ export function DecisionCard({ decision, onFeedback }: { decision: AgentDecision
       <div className="row between">
         <strong style={{ fontSize: 13 }}>{decision.agentId}</strong>
         <span className="row" style={{ gap: 8 }}>
+          <ExecutionBadge llmVersion={decision.llmVersion} />
           <RiskBadge risk={decision.risk} />
           <Confidence value={decision.confidence} />
         </span>

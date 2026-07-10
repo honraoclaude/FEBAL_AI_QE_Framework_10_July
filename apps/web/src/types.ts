@@ -55,6 +55,7 @@ export interface AgentDefinition {
   phase: string;
   description: string;
   gatekeeper: boolean;
+  execution: 'DETERMINISTIC' | 'AI_ASSISTED';
   approverRoles: string[];
   tags: string[];
 }

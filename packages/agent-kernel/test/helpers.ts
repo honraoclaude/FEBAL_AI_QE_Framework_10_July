@@ -26,6 +26,7 @@ export function definition(id: string, overrides: Partial<AgentDefinition> = {})
     outputs: [],
     promptId: 'test-prompt',
     gatekeeper: false,
+    execution: 'AI_ASSISTED',
     approverRoles: ['QE_LEAD'],
     tags: [],
     ...overrides,
