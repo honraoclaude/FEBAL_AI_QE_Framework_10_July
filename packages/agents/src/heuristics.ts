@@ -52,6 +52,51 @@ export interface HeuristicPayload {
 }
 
 /**
+ * Canonical heuristic assessment: evaluates an agent's configured aspects and
+ * produces a complete AgentResult. The single source of truth for heuristic
+ * scoring — used by HeuristicAgent (catalog breadth) and by deep agents as
+ * their fallback when their real input (e.g. a git branch) is absent.
+ */
+export function buildHeuristicResult(
+  definition: AgentDefinition,
+  subjectId: string,
+  aspects: string[],
+  options: { reasoningSuffix?: string } = {},
+): AgentResult<HeuristicPayload> {
+  const checks = evaluateAspects(definition.id, subjectId, aspects);
+  const score = Number((checks.reduce((s, c) => s + c.score, 0) / checks.length).toFixed(2));
+  const failures = checks.filter((c) => c.status === 'FAIL');
+  const warnings = checks.filter((c) => c.status === 'WARN');
+  const passed = failures.length === 0;
+
+  return {
+    reasoning:
+      `${definition.name} evaluated ${checks.length} aspects for ${subjectId}: ${checks.filter((c) => c.status === 'PASS').length} pass, ${warnings.length} warnings, ${failures.length} failures. Composite score ${score}.` +
+      (options.reasoningSuffix ? ` ${options.reasoningSuffix}` : ''),
+    evidence: checks.map((c) => `${c.aspect} -> ${c.status} (${c.score})`),
+    confidence: score,
+    risk: scoreToRisk(score),
+    businessImpact: failures.length > 0 ? `Failures in ${failures.map((f) => f.aspect).join(', ')} put delivery outcomes at risk.` : 'No adverse business impact identified.',
+    technicalImpact: warnings.length > 0 ? `Observations in ${warnings.map((w) => w.aspect).join(', ')} should be reviewed.` : 'No adverse technical impact identified.',
+    complianceImpact: definition.tags.includes('compliance')
+      ? passed
+        ? 'Compliance evidence captured; no open obligations.'
+        : 'Open compliance obligations must be resolved and evidenced.'
+      : 'Not a compliance-scoped evaluation.',
+    recommendedAction: passed
+      ? `Proceed. ${warnings.length > 0 ? 'Address warnings in-sprint.' : ''}`.trim()
+      : `Remediate: ${failures.map((f) => f.aspect).join(', ')} before progressing.`,
+    alternativeRecommendations: passed ? ['Request a human spot-check for additional assurance.'] : ['Accept the risk with documented sign-off from the accountable approver.'],
+    payload: {
+      summary: `${definition.name} composite score ${score} for ${subjectId}.`,
+      checks,
+      score,
+      passed,
+    },
+  };
+}
+
+/**
  * Heuristic agent implementation used by the breadth of the catalog: each
  * agent evaluates its configured aspects deterministically and produces the
  * full governance envelope. Deep, hand-written agents replace this where the
@@ -66,35 +111,7 @@ export class HeuristicAgent extends BaseAgent<HeuristicPayload> {
   }
 
   protected async analyze(context: AgentContext): Promise<AgentResult<HeuristicPayload>> {
-    const checks = evaluateAspects(this.definition.id, context.subjectId, this.aspects);
-    const score = Number((checks.reduce((s, c) => s + c.score, 0) / checks.length).toFixed(2));
-    const failures = checks.filter((c) => c.status === 'FAIL');
-    const warnings = checks.filter((c) => c.status === 'WARN');
-    const passed = failures.length === 0;
-
-    return {
-      reasoning: `${this.definition.name} evaluated ${checks.length} aspects for ${context.subjectId}: ${checks.filter((c) => c.status === 'PASS').length} pass, ${warnings.length} warnings, ${failures.length} failures. Composite score ${score}.`,
-      evidence: checks.map((c) => `${c.aspect} -> ${c.status} (${c.score})`),
-      confidence: score,
-      risk: scoreToRisk(score),
-      businessImpact: failures.length > 0 ? `Failures in ${failures.map((f) => f.aspect).join(', ')} put delivery outcomes at risk.` : 'No adverse business impact identified.',
-      technicalImpact: warnings.length > 0 ? `Observations in ${warnings.map((w) => w.aspect).join(', ')} should be reviewed.` : 'No adverse technical impact identified.',
-      complianceImpact: this.definition.tags.includes('compliance')
-        ? passed
-          ? 'Compliance evidence captured; no open obligations.'
-          : 'Open compliance obligations must be resolved and evidenced.'
-        : 'Not a compliance-scoped evaluation.',
-      recommendedAction: passed
-        ? `Proceed. ${warnings.length > 0 ? 'Address warnings in-sprint.' : ''}`.trim()
-        : `Remediate: ${failures.map((f) => f.aspect).join(', ')} before progressing.`,
-      alternativeRecommendations: passed ? ['Request a human spot-check for additional assurance.'] : ['Accept the risk with documented sign-off from the accountable approver.'],
-      payload: {
-        summary: `${this.definition.name} composite score ${score} for ${context.subjectId}.`,
-        checks,
-        score,
-        passed,
-      },
-    };
+    return buildHeuristicResult(this.definition, context.subjectId, this.aspects);
   }
 }
 

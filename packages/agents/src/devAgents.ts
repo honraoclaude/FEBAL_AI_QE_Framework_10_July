@@ -1,6 +1,6 @@
 import { BaseAgent, type AgentContext, type AgentResult } from '@qe-ai/agent-kernel';
 import { DEVELOPMENT_AGENTS } from './catalog.js';
-import { AGENT_ASPECTS, evaluateAspects, scoreToRisk } from './heuristics.js';
+import { AGENT_ASPECTS, buildHeuristicResult, type AspectCheck } from './heuristics.js';
 import { analyzeApex, generateApexTestClass, type ApexFinding, type GeneratedTest } from './apex.js';
 
 /**
@@ -36,7 +36,7 @@ export interface CodeReviewPayload {
   findings: ApexFinding[];
   bySeverity: Record<string, number>;
   passed: boolean;
-  checks?: ReturnType<typeof evaluateAspects>;
+  checks?: AspectCheck[];
 }
 
 export class CodeReviewAgent extends BaseAgent<CodeReviewPayload> {
@@ -83,20 +83,12 @@ export class CodeReviewAgent extends BaseAgent<CodeReviewPayload> {
   }
 
   private async heuristic(context: AgentContext): Promise<AgentResult<CodeReviewPayload>> {
-    const checks = evaluateAspects(this.definition.id, context.subjectId, AGENT_ASPECTS['code-review']!);
-    const score = Number((checks.reduce((s, c) => s + c.score, 0) / checks.length).toFixed(2));
-    const passed = checks.every((c) => c.status !== 'FAIL');
+    const base = buildHeuristicResult(this.definition, context.subjectId, AGENT_ASPECTS['code-review']!, {
+      reasoningSuffix: 'No branch supplied — provide one via /api/v1/devtools/branch-review for real, line-anchored static analysis.',
+    });
     return {
-      reasoning: `No branch supplied — heuristic review of ${context.subjectId} across ${checks.length} aspects (composite ${score}). Provide a branch via /api/v1/devtools/branch-review for real static analysis.`,
-      evidence: checks.map((c) => `${c.aspect} -> ${c.status} (${c.score})`),
-      confidence: score,
-      risk: scoreToRisk(score),
-      businessImpact: 'Heuristic assessment only.',
-      technicalImpact: 'Heuristic assessment only.',
-      complianceImpact: 'Not a compliance-scoped evaluation.',
-      recommendedAction: passed ? 'Proceed.' : 'Remediate failed aspects.',
-      alternativeRecommendations: ['Run a branch review for line-level findings.'],
-      payload: { mode: 'HEURISTIC', filesReviewed: 0, findings: [], bySeverity: {}, passed, checks },
+      ...base,
+      payload: { mode: 'HEURISTIC', filesReviewed: 0, findings: [], bySeverity: {}, passed: base.payload.passed, checks: base.payload.checks },
     };
   }
 }
@@ -106,7 +98,7 @@ export interface TestGenPayload {
   generated: GeneratedTest[];
   totalCoveredMethods: number;
   passed: boolean;
-  checks?: ReturnType<typeof evaluateAspects>;
+  checks?: AspectCheck[];
 }
 
 export class ApexUnitTestGeneratorAgent extends BaseAgent<TestGenPayload> {
@@ -142,19 +134,12 @@ export class ApexUnitTestGeneratorAgent extends BaseAgent<TestGenPayload> {
   }
 
   private async heuristic(context: AgentContext): Promise<AgentResult<TestGenPayload>> {
-    const checks = evaluateAspects(this.definition.id, context.subjectId, AGENT_ASPECTS['apex-unit-test-generator']!);
-    const score = Number((checks.reduce((s, c) => s + c.score, 0) / checks.length).toFixed(2));
+    const base = buildHeuristicResult(this.definition, context.subjectId, AGENT_ASPECTS['apex-unit-test-generator']!, {
+      reasoningSuffix: 'No branch supplied — provide one via /api/v1/devtools/branch-review to generate executable Apex test classes.',
+    });
     return {
-      reasoning: `No branch supplied — heuristic assessment of test adequacy for ${context.subjectId}. Provide a branch via /api/v1/devtools/branch-review to generate real Apex test classes.`,
-      evidence: checks.map((c) => `${c.aspect} -> ${c.status} (${c.score})`),
-      confidence: score,
-      risk: scoreToRisk(score),
-      businessImpact: 'Heuristic assessment only.',
-      technicalImpact: 'Heuristic assessment only.',
-      complianceImpact: 'Not a compliance-scoped evaluation.',
-      recommendedAction: 'Run a branch review to generate executable test skeletons.',
-      alternativeRecommendations: [],
-      payload: { mode: 'HEURISTIC', generated: [], totalCoveredMethods: 0, passed: checks.every((c) => c.status !== 'FAIL'), checks },
+      ...base,
+      payload: { mode: 'HEURISTIC', generated: [], totalCoveredMethods: 0, passed: base.payload.passed, checks: base.payload.checks },
     };
   }
 }
