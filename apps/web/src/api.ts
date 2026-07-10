@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 
 /** Thin typed client for the QE.ai API. Demo auth token is the acting user. */
 
@@ -73,4 +73,38 @@ export function useApi<T>(path: string, deps: unknown[] = []): Loaded<T> {
 
   const reload = useCallback(() => setTick((t) => t + 1), []);
   return { data, error, loading, reload };
+}
+
+export interface StreamEvent {
+  id: string;
+  topic: string;
+  payload: Record<string, unknown>;
+  occurredAt: string;
+}
+
+/**
+ * Subscribes to the platform's live event stream (SSE). The handler receives
+ * every platform event; it is kept in a ref so callers can pass fresh
+ * closures without reconnecting. Reconnection is handled by EventSource.
+ */
+export function useEventStream(onEvent: (event: StreamEvent) => void): boolean {
+  const handlerRef = useRef(onEvent);
+  handlerRef.current = onEvent;
+  const [connected, setConnected] = useState(false);
+
+  useEffect(() => {
+    const source = new EventSource(`${BASE}/api/v1/events/stream`);
+    source.onopen = () => setConnected(true);
+    source.onerror = () => setConnected(false);
+    source.onmessage = (message) => {
+      try {
+        handlerRef.current(JSON.parse(message.data) as StreamEvent);
+      } catch {
+        /* ignore malformed frames */
+      }
+    };
+    return () => source.close();
+  }, []);
+
+  return connected;
 }

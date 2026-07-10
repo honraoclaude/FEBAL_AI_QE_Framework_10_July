@@ -89,6 +89,29 @@ describe('QE.ai API', () => {
     expect(runAfter.status).toBe('COMPLETED');
   });
 
+  it('starts a detached workflow that progresses asynchronously', async () => {
+    const stories = (await app.inject({ method: 'GET', url: '/api/v1/stories' })).json() as Array<{ id: string; jiraKey: string }>;
+    const story = stories.find((s) => s.jiraKey === 'FSC-105')!;
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/v1/workflows/refinement/start',
+      payload: { subjectId: story.id, detached: true },
+    });
+    expect(res.statusCode).toBe(200);
+    const run = res.json() as { id: string; status: string };
+    // Returned before the gate — execution continues in the background.
+    expect(['RUNNING', 'AWAITING_APPROVAL']).toContain(run.status);
+
+    // Poll until the background run reaches the human gate.
+    let status = run.status;
+    for (let i = 0; i < 50 && status !== 'AWAITING_APPROVAL'; i++) {
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      status = ((await app.inject({ method: 'GET', url: `/api/v1/runs/${run.id}` })).json() as { status: string }).status;
+    }
+    expect(status).toBe('AWAITING_APPROVAL');
+  });
+
   it('rejects approvals from unauthorised roles', async () => {
     const stories = (await app.inject({ method: 'GET', url: '/api/v1/stories' })).json() as Array<{ id: string; jiraKey: string }>;
     const story = stories.find((s) => s.jiraKey === 'FSC-101')!;

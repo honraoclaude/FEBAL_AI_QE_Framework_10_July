@@ -17,6 +17,12 @@ import { newId, nowIso } from './util.js';
 export interface WorkflowEngineOptions {
   /** Gate confidence threshold (0..1). Gatekeeper decisions below it escalate to a human. */
   gateConfidenceThreshold?: number;
+  /**
+   * Optional pacing delay before each step (ms). Used in demo mode so live
+   * observers can watch steps progress; keep 0 in tests and with real LLM
+   * providers (which have natural latency).
+   */
+  stepDelayMs?: number;
 }
 
 export interface StartWorkflowInput {
@@ -26,6 +32,13 @@ export interface StartWorkflowInput {
   subjectId: string;
   triggeredBy: string;
   initialContext?: Record<string, unknown>;
+  /**
+   * When true, `start` returns as soon as the run is created and execution
+   * continues asynchronously — observe progress via `workflow.*` events or
+   * by polling the run. When false (default), `start` resolves once the run
+   * completes, fails or pauses for approval.
+   */
+  detached?: boolean;
 }
 
 /**
@@ -134,6 +147,22 @@ export class WorkflowEngine {
       detail: { definitionId: definition.id, version: definition.version },
     });
     await this.bus.publish(run.tenantId, 'workflow.started', { runId: run.id }, 'workflow-engine');
+
+    if (input.detached) {
+      void this.process(run).catch((error) => {
+        run.status = 'FAILED';
+        run.finishedAt = nowIso();
+        this.audit.record({
+          tenantId: run.tenantId,
+          kind: 'WORKFLOW_FAILED',
+          actor: 'workflow-engine',
+          summary: `Detached run crashed: ${error instanceof Error ? error.message : String(error)}`,
+          workflowRunId: run.id,
+          subjectId: run.subjectId,
+        });
+      });
+      return run;
+    }
 
     await this.process(run);
     return run;
@@ -263,6 +292,15 @@ export class WorkflowEngine {
     stepRun.status = 'RUNNING';
     stepRun.startedAt = stepRun.startedAt ?? nowIso();
     this.registry.markRunning(stepDef.agentId);
+    await this.bus.publish(
+      run.tenantId,
+      'workflow.step.started',
+      { runId: run.id, stepId: stepDef.id, agentId: stepDef.agentId },
+      'workflow-engine',
+    );
+    if (this.options.stepDelayMs && this.options.stepDelayMs > 0) {
+      await new Promise((resolve) => setTimeout(resolve, this.options.stepDelayMs));
+    }
 
     const context: AgentContext = {
       tenantId: run.tenantId,

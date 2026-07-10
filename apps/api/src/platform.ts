@@ -48,7 +48,7 @@ export interface Platform {
   metrics: MetricsService;
 }
 
-export async function createPlatform(options: { seed?: boolean } = {}): Promise<Platform> {
+export async function createPlatform(options: { seed?: boolean; stepDelayMs?: number } = {}): Promise<Platform> {
   const bus = new EventBus();
   const audit = new AuditTrail();
   const approvals = new ApprovalService(bus, audit);
@@ -67,8 +67,22 @@ export async function createPlatform(options: { seed?: boolean } = {}): Promise<
   const llm = createLlmProvider(tenant.settings.llmProvider, tenant.settings.llmModel);
   const engine = new WorkflowEngine(registry, bus, audit, approvals, memory, prompts, llm, {
     gateConfidenceThreshold: tenant.settings.gateConfidenceThreshold,
+    stepDelayMs: options.stepDelayMs ?? 0,
   });
   bootstrapAgentPlatform(registry, engine, prompts);
+
+  // Completed refinement runs promote the story to Development Ready —
+  // event-driven so it applies to both synchronous and detached runs.
+  bus.subscribe('workflow.completed', async (event) => {
+    const { runId } = event.payload as { runId: string };
+    const run = engine.getRun(runId);
+    if (!run || run.definitionId !== 'refinement') return;
+    const item = workItems.get(run.subjectId);
+    if (item && (item.stage === 'BACKLOG' || item.stage === 'REFINEMENT')) {
+      item.stage = 'DEVELOPMENT_READY';
+      workItems.upsert(item);
+    }
+  });
 
   const jiraAdapter = new MockJiraAdapter(REMOTE_JIRA_ISSUES);
   const jira = new JiraSyncService(DEMO_TENANT_ID, jiraAdapter, workItems, sprints, audit, bus);

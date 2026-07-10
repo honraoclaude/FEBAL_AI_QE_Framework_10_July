@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { BaseAgent } from '../src/index.js';
 import { buildKernel, definition, okResult, StubAgent, TENANT } from './helpers.js';
 
 describe('WorkflowEngine', () => {
@@ -228,6 +229,48 @@ describe('WorkflowEngine', () => {
     const rolledBack = await engine.rollback(run.id, 'admin');
     expect(rolledBack.status).toBe('ROLLED_BACK');
     expect(rolledBack.steps[0]!.status).toBe('SKIPPED');
+  });
+
+  it('detached start returns immediately and completes asynchronously with step events', async () => {
+    const { engine, registry, bus } = buildKernel();
+    class SlowAgent extends BaseAgent<Record<string, unknown>> {
+      protected async analyze() {
+        await new Promise((resolve) => setTimeout(resolve, 25));
+        return okResult();
+      }
+    }
+    registry.register(new SlowAgent(definition('slow-1')));
+    registry.register(new SlowAgent(definition('slow-2')));
+    engine.define({
+      id: 'wf-detached',
+      name: 'Detached',
+      phase: 'TESTING',
+      description: '',
+      version: 1,
+      steps: [
+        { id: 's1', agentId: 'slow-1', maxRetries: 0 },
+        { id: 's2', agentId: 'slow-2', maxRetries: 0 },
+      ],
+    });
+
+    const run = await engine.start({
+      tenantId: TENANT,
+      definitionId: 'wf-detached',
+      subjectType: 'STORY',
+      subjectId: 'ST-9',
+      triggeredBy: 'tester',
+      detached: true,
+    });
+
+    // Returned before completion; execution continues in the background.
+    expect(run.status).toBe('RUNNING');
+
+    await new Promise((resolve) => setTimeout(resolve, 250));
+    expect(run.status).toBe('COMPLETED');
+    const topics = bus.recent(TENANT).map((e) => e.topic);
+    expect(topics).toContain('workflow.step.started');
+    expect(topics).toContain('workflow.step.completed');
+    expect(topics).toContain('workflow.completed');
   });
 
   it('renders a mermaid visualisation', async () => {

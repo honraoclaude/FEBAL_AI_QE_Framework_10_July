@@ -1,5 +1,5 @@
-import { useMemo, useState } from 'react';
-import { api, useApi } from '../api';
+import { useMemo, useRef, useState } from 'react';
+import { api, useApi, useEventStream } from '../api';
 import { DecisionCard, ErrorNote, StatusBadge } from '../components/common';
 import type { AgentDecision, StepRun, WorkItem, WorkflowDefinition, WorkflowRun } from '../types';
 
@@ -59,6 +59,18 @@ export function LiveWorkflowPage() {
   const [busyPhase, setBusyPhase] = useState<string>();
   const [selectedDecisionId, setSelectedDecisionId] = useState<string>();
 
+  // Live updates: any workflow/approval event refreshes the board (debounced —
+  // parallel steps can complete in bursts).
+  const debounceRef = useRef<number>();
+  const live = useEventStream((event) => {
+    if (!event.topic.startsWith('workflow.') && !event.topic.startsWith('approval.')) return;
+    window.clearTimeout(debounceRef.current);
+    debounceRef.current = window.setTimeout(() => {
+      runs.reload();
+      decisions.reload();
+    }, 120);
+  });
+
   const allRuns = useMemo(() => [...(runs.data ?? [])].sort((a, b) => b.startedAt.localeCompare(a.startedAt)), [runs.data]);
 
   // Default subject: the story of the most recent run, else the first story.
@@ -101,9 +113,9 @@ export function LiveWorkflowPage() {
     if (!effectiveSubjectId) return;
     setBusyPhase(workflowId);
     try {
-      await api.post(`/api/v1/workflows/${workflowId}/start`, { subjectId: effectiveSubjectId });
+      // Detached: the API returns immediately and the run streams in via SSE.
+      await api.post(`/api/v1/workflows/${workflowId}/start`, { subjectId: effectiveSubjectId, detached: true });
       runs.reload();
-      decisions.reload();
     } finally {
       setBusyPhase(undefined);
     }
@@ -136,6 +148,9 @@ export function LiveWorkflowPage() {
               <span className="sub">agent time {formatDuration(totalMs || undefined)}</span>
               <span className="sub">
                 {started.length}/{PHASE_COLUMNS.length} phases run
+              </span>
+              <span className={`badge ${live ? 'good' : 'warning'}`} title="Server-sent events connection">
+                {live ? '● live' : '○ reconnecting…'}
               </span>
             </div>
           </div>

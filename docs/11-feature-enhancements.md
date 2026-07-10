@@ -135,13 +135,13 @@ humans. Policy changes are themselves audited approvals.
 
 ## Theme E — Product & UX
 
-### ENH-17 · Live run streaming `QW`
-Stream `workflow.step.completed` events over SSE/WebSocket so Live Workflow
-board cards flip in real time.
-*Seam:* the `EventBus` already publishes everything needed; add an SSE route
-in `apps/api/src/server.ts` and a subscription hook in
-`apps/web/src/pages/LiveWorkflow.tsx`.
-*Value:* the demo moment that sells the product.
+### ENH-17 · Live run streaming `QW` — ✅ SHIPPED
+Delivered: SSE endpoint `/api/v1/events/stream` bridging the event bus;
+`workflow.step.started` events; detached workflow starts
+(`{detached: true}`) so runs execute in the background; `useEventStream`
+hook flips Live Workflow cards in real time with a ● live indicator;
+demo step pacing via `QEAI_STEP_DELAY_MS` (default 450ms in simulated
+mode, 0 with a live LLM); nginx SSE pass-through.
 
 ### ENH-18 · Traceability thread view `QW`
 Single vertical timeline per story: JIRA → analysis → workshop → BDD → code →

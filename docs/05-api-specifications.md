@@ -14,6 +14,7 @@ Implementation: `apps/api/src/server.ts`; exercised by `apps/api/test/api.test.t
 | GET | `/api/v1/tenant` | Tenant profile + settings (threshold, LLM provider/model, residency, regulatory profiles) |
 | GET | `/api/v1/users` | Users and roles |
 | GET | `/api/v1/events` | Recent platform events (event bus tail) |
+| GET | `/api/v1/events/stream` | **Server-Sent Events**: live bridge of the event bus (all `workflow.*`, `approval.*`, `jira.*`, `knowledge.*` topics; 15s heartbeats) |
 
 ### Dashboards & metrics
 | Method | Path | Description |
@@ -37,7 +38,7 @@ Implementation: `apps/api/src/server.ts`; exercised by `apps/api/test/api.test.t
 |---|---|---|
 | GET | `/api/v1/agents` / `/agents/:id` / `/agents/health` | Catalog, agent detail, health board |
 | GET | `/api/v1/workflows` | Workflow definitions (5 phases) |
-| POST | `/api/v1/workflows/:id/start` | `{subjectId}` → WorkflowRun |
+| POST | `/api/v1/workflows/:id/start` | `{subjectId, detached?}` → WorkflowRun. `detached: true` returns immediately; progress streams via SSE / polling |
 | GET | `/api/v1/runs` / `/runs/:id` / `/runs/:id/diagram` | Runs; run detail; mermaid visualisation |
 | POST | `/api/v1/runs/:id/pause` `/resume` `/rollback` | Orchestrator controls |
 
@@ -63,6 +64,7 @@ Implementation: `apps/api/src/server.ts`; exercised by `apps/api/test/api.test.t
 | Topic | Payload | Emitted by |
 |---|---|---|
 | `workflow.started/completed/failed/rolled_back` | `{runId, stepId?}` | orchestrator |
+| `workflow.step.started` | `{runId, stepId, agentId}` | orchestrator |
 | `workflow.step.completed` | `{runId, stepId, decisionId}` | orchestrator |
 | `approval.requested/resolved` | `{approvalId, type/status}` | approval service |
 | `jira.sync.completed` | `{syncId}` | JIRA sync |
