@@ -1,21 +1,18 @@
-public class FeeCalculator {
+public with sharing class FeeCalculator {
     public static Decimal calculateTotalFees(List<Id> accountIds) {
         Decimal total = 0;
-        for (Id accountId : accountIds) {
-            List<Fee__c> fees = [SELECT Amount__c FROM Fee__c WHERE Account__c = :accountId];
-            for (Fee__c fee : fees) {
-                total += fee.Amount__c;
-                fee.Processed__c = true;
-                update fee;
-            }
+        List<Fee__c> fees = [SELECT Amount__c FROM Fee__c WHERE Account__c IN :accountIds];
+        List<Fee__c> toUpdate = new List<Fee__c>();
+        for (Fee__c fee : fees) {
+            total += fee.Amount__c;
+            fee.Processed__c = true;
+            toUpdate.add(fee);
         }
-        System.debug('total: ' + total);
+        update toUpdate;
         return total;
     }
 
     public static void assignOwner(Id recordId) {
-        Fee__c fee = new Fee__c(Id = recordId);
-        fee.OwnerId = '005000000000001AAA';
-        update fee;
+        update new Fee__c(Id = recordId, OwnerId = UserInfo.getUserId());
     }
 }
