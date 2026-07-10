@@ -114,8 +114,15 @@ describe('QE.ai API', () => {
 
   it('refuses to start the next phase while an approval is pending, with a clear message', async () => {
     const stories = (await app.inject({ method: 'GET', url: '/api/v1/stories' })).json() as Array<{ id: string; jiraKey: string }>;
-    // FSC-105's refinement run is awaiting approval from the detached test above.
-    const story = stories.find((s) => s.jiraKey === 'FSC-105')!;
+    const story = stories.find((s) => s.jiraKey === 'FSC-103')!;
+
+    // Self-contained: create this test's own pending approval.
+    const refinement = await app.inject({
+      method: 'POST',
+      url: '/api/v1/workflows/refinement/start',
+      payload: { subjectId: story.id },
+    });
+    expect(refinement.json().status).toBe('AWAITING_APPROVAL');
 
     const res = await app.inject({
       method: 'POST',
@@ -132,7 +139,10 @@ describe('QE.ai API', () => {
     const story = stories.find((s) => s.jiraKey === 'FSC-101')!;
     await app.inject({ method: 'POST', url: '/api/v1/workflows/refinement/start', payload: { subjectId: story.id } });
 
-    const pending = (await app.inject({ method: 'GET', url: '/api/v1/approvals?status=REVIEW' })).json() as Array<{ id: string }>;
+    // Self-contained: resolve THIS story's approval, not whatever is oldest.
+    const pending = ((await app.inject({ method: 'GET', url: '/api/v1/approvals?status=REVIEW' })).json() as Array<{ id: string; subjectId: string }>).filter(
+      (a) => a.subjectId === story.id,
+    );
     const res = await app.inject({
       method: 'POST',
       url: `/api/v1/approvals/${pending[0]!.id}/resolve`,
@@ -144,6 +154,11 @@ describe('QE.ai API', () => {
   });
 
   it('verifies the audit chain and exports it', async () => {
+    // Self-contained: generate audit events regardless of test ordering.
+    const stories = (await app.inject({ method: 'GET', url: '/api/v1/stories' })).json() as Array<{ id: string; jiraKey: string }>;
+    const story = stories.find((s) => s.jiraKey === 'FSC-106')!;
+    await app.inject({ method: 'POST', url: '/api/v1/workflows/refinement/start', payload: { subjectId: story.id } });
+
     const verify = await app.inject({ method: 'GET', url: '/api/v1/audit/verify' });
     expect(verify.json().intact).toBe(true);
     const exported = await app.inject({ method: 'GET', url: '/api/v1/audit/export' });
@@ -152,7 +167,13 @@ describe('QE.ai API', () => {
   });
 
   it('records feedback and searches knowledge', async () => {
-    const decisions = (await app.inject({ method: 'GET', url: '/api/v1/decisions' })).json() as Array<{ id: string }>;
+    // Self-contained: generate this test's own decisions.
+    const stories = (await app.inject({ method: 'GET', url: '/api/v1/stories' })).json() as Array<{ id: string; jiraKey: string }>;
+    const story = stories.find((s) => s.jiraKey === 'FSC-107')!;
+    await app.inject({ method: 'POST', url: '/api/v1/workflows/refinement/start', payload: { subjectId: story.id } });
+
+    const decisions = (await app.inject({ method: 'GET', url: `/api/v1/decisions?subjectId=${story.id}` })).json() as Array<{ id: string }>;
+    expect(decisions.length).toBeGreaterThan(0);
     const fb = await app.inject({
       method: 'POST',
       url: '/api/v1/feedback',
