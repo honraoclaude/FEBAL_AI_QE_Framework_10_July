@@ -1,7 +1,7 @@
 import { useMemo, useRef, useState } from 'react';
 import { api, useApi, useEventStream } from '../api';
 import { DecisionCard, ErrorNote, StatusBadge } from '../components/common';
-import type { AgentDecision, StepRun, WorkItem, WorkflowDefinition, WorkflowRun } from '../types';
+import type { AgentDecision, ApprovalRequest, StepRun, WorkItem, WorkflowDefinition, WorkflowRun } from '../types';
 
 /**
  * Live Workflow — the full-lifecycle board for one work item: a column per
@@ -55,9 +55,11 @@ export function LiveWorkflowPage() {
   const stories = useApi<WorkItem[]>('/api/v1/stories');
   const runs = useApi<WorkflowRun[]>('/api/v1/runs');
   const workflows = useApi<WorkflowDefinition[]>('/api/v1/workflows');
+  const approvals = useApi<ApprovalRequest[]>('/api/v1/approvals?status=REVIEW');
   const [subjectId, setSubjectId] = useState<string>();
   const [busyPhase, setBusyPhase] = useState<string>();
   const [selectedDecisionId, setSelectedDecisionId] = useState<string>();
+  const [actionError, setActionError] = useState<string>();
 
   // Live updates: any workflow/approval event refreshes the board (debounced —
   // parallel steps can complete in bursts).
@@ -68,6 +70,7 @@ export function LiveWorkflowPage() {
     debounceRef.current = window.setTimeout(() => {
       runs.reload();
       decisions.reload();
+      approvals.reload();
     }, 120);
   });
 
@@ -109,15 +112,36 @@ export function LiveWorkflowPage() {
     return sum + (end - new Date(run.startedAt).getTime());
   }, 0);
 
+  // A pending approval freezes the subject: no further phases may start.
+  const blockingRun = started.find((run) => run.status === 'AWAITING_APPROVAL');
+  const blockingPhase = blockingRun ? PHASE_COLUMNS.find((c) => c.workflowId === blockingRun.definitionId)?.label : undefined;
+  const blockingStep = blockingRun?.steps.find((s) => s.status === 'AWAITING_APPROVAL');
+  const blockingApproval = (approvals.data ?? []).find((a) => a.subjectId === effectiveSubjectId);
+
   async function startPhase(workflowId: string) {
     if (!effectiveSubjectId) return;
     setBusyPhase(workflowId);
+    setActionError(undefined);
     try {
       // Detached: the API returns immediately and the run streams in via SSE.
       await api.post(`/api/v1/workflows/${workflowId}/start`, { subjectId: effectiveSubjectId, detached: true });
       runs.reload();
+    } catch (error) {
+      setActionError(error instanceof Error ? error.message : 'Failed to start workflow');
     } finally {
       setBusyPhase(undefined);
+    }
+  }
+
+  async function resolveBlockingApproval(status: 'APPROVED' | 'REJECTED') {
+    if (!blockingApproval) return;
+    setActionError(undefined);
+    try {
+      await api.post(`/api/v1/approvals/${blockingApproval.id}/resolve`, { status, comment: `${status} from Live Workflow board` });
+      runs.reload();
+      approvals.reload();
+    } catch (error) {
+      setActionError(error instanceof Error ? error.message : 'Approval failed');
     }
   }
 
@@ -175,6 +199,36 @@ export function LiveWorkflowPage() {
         </div>
       </div>
 
+      {(blockingRun || actionError) && (
+        <div className="card" style={{ borderColor: blockingRun ? 'rgba(250,178,25,0.45)' : 'rgba(208,59,59,0.45)' }}>
+          {blockingRun && (
+            <div className="row between">
+              <div>
+                <span className="badge warning">⛔ progression blocked</span>
+                <div style={{ fontSize: 13, color: 'var(--text-secondary)', marginTop: 6 }}>
+                  <strong style={{ color: 'var(--text-primary)' }}>{blockingPhase}</strong> is awaiting human approval
+                  {blockingStep ? <> at <strong>{blockingStep.agentId}</strong></> : null}. No further agents can run for this work item until the
+                  approval is resolved{blockingApproval ? <> — requires {blockingApproval.requiredRoles.join(' or ')}</> : null}.
+                </div>
+              </div>
+              {blockingApproval && (
+                <div className="row">
+                  <button className="btn sm primary" onClick={() => resolveBlockingApproval('APPROVED')}>
+                    Approve
+                  </button>
+                  <button className="btn sm danger" onClick={() => resolveBlockingApproval('REJECTED')}>
+                    Reject
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
+          {actionError && (
+            <div style={{ fontSize: 13, color: 'var(--status-critical)', marginTop: blockingRun ? 10 : 0 }}>{actionError}</div>
+          )}
+        </div>
+      )}
+
       <div className="board">
         {PHASE_COLUMNS.map((col, i) => {
           const run = phaseRuns[i];
@@ -189,8 +243,13 @@ export function LiveWorkflowPage() {
                   <div className="empty" style={{ padding: '14px 6px' }}>
                     Not started
                     <div style={{ marginTop: 10 }}>
-                      <button className="btn sm primary" disabled={busyPhase === col.workflowId || !effectiveSubjectId} onClick={() => startPhase(col.workflowId)}>
-                        {busyPhase === col.workflowId ? 'Running…' : '▶ Run phase'}
+                      <button
+                        className="btn sm primary"
+                        disabled={busyPhase === col.workflowId || !effectiveSubjectId || Boolean(blockingRun)}
+                        title={blockingRun ? `Blocked: ${blockingPhase} is awaiting human approval` : undefined}
+                        onClick={() => startPhase(col.workflowId)}
+                      >
+                        {blockingRun ? '⛔ Awaiting approval' : busyPhase === col.workflowId ? 'Running…' : '▶ Run phase'}
                       </button>
                     </div>
                   </div>

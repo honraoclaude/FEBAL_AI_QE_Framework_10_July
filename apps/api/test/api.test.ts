@@ -112,6 +112,21 @@ describe('QE.ai API', () => {
     expect(status).toBe('AWAITING_APPROVAL');
   });
 
+  it('refuses to start the next phase while an approval is pending, with a clear message', async () => {
+    const stories = (await app.inject({ method: 'GET', url: '/api/v1/stories' })).json() as Array<{ id: string; jiraKey: string }>;
+    // FSC-105's refinement run is awaiting approval from the detached test above.
+    const story = stories.find((s) => s.jiraKey === 'FSC-105')!;
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/v1/workflows/development/start',
+      payload: { subjectId: story.id },
+    });
+    expect(res.statusCode).toBe(400);
+    expect(res.json().error).toMatch(/awaiting human approval/);
+    expect(res.json().error).toMatch(/Resolve the pending approval/);
+  });
+
   it('rejects approvals from unauthorised roles', async () => {
     const stories = (await app.inject({ method: 'GET', url: '/api/v1/stories' })).json() as Array<{ id: string; jiraKey: string }>;
     const story = stories.find((s) => s.jiraKey === 'FSC-101')!;

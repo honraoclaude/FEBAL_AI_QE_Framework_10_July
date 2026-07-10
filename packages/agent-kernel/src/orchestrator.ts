@@ -111,9 +111,31 @@ export class WorkflowEngine {
     return all;
   }
 
+  /**
+   * A pending human approval freezes the subject: no further agents may run
+   * for it — in this workflow or any other phase — until the approval is
+   * resolved. Returns the blocking run, if any.
+   */
+  approvalBlock(tenantId: string, subjectId: string): WorkflowRun | undefined {
+    return [...this.runs.values()].find(
+      (run) => run.tenantId === tenantId && run.subjectId === subjectId && run.status === 'AWAITING_APPROVAL',
+    );
+  }
+
   async start(input: StartWorkflowInput): Promise<WorkflowRun> {
     const definition = this.definitions.get(input.definitionId);
     if (!definition) throw new Error(`Unknown workflow: ${input.definitionId}`);
+
+    const blocking = this.approvalBlock(input.tenantId, input.subjectId);
+    if (blocking) {
+      const blockingDefinition = this.definitions.get(blocking.definitionId);
+      const waitingStep = blocking.steps.find((s) => s.status === 'AWAITING_APPROVAL');
+      throw new Error(
+        `Cannot start ${definition.name}: ${blockingDefinition?.name ?? blocking.definitionId} is awaiting human approval` +
+          `${waitingStep ? ` at ${waitingStep.agentId}` : ''} for this work item. ` +
+          'Resolve the pending approval before running further agents.',
+      );
+    }
 
     const run: WorkflowRun = {
       id: newId('run'),

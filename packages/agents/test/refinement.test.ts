@@ -149,6 +149,73 @@ describe('QE.ai agent platform', () => {
     expect(audit.query(TENANT, { kind: 'AGENT_DECISION' }).length).toBeGreaterThanOrEqual(7);
   });
 
+  it('blocks any further phase while a human approval is pending, and unblocks on resolution', async () => {
+    const { engine, approvals } = buildPlatform();
+    const refinementRun = await engine.start({
+      tenantId: TENANT,
+      definitionId: 'refinement',
+      subjectType: 'STORY',
+      subjectId: READY_STORY.id,
+      triggeredBy: 'po@qe.ai',
+      initialContext: { story: READY_STORY },
+    });
+    expect(refinementRun.status).toBe('AWAITING_APPROVAL');
+
+    // Next phase is frozen for this subject...
+    await expect(
+      engine.start({
+        tenantId: TENANT,
+        definitionId: 'development',
+        subjectType: 'STORY',
+        subjectId: READY_STORY.id,
+        triggeredBy: 'dev@qe.ai',
+        initialContext: { story: READY_STORY },
+      }),
+    ).rejects.toThrow(/awaiting human approval/);
+
+    // ...and so is re-running the same phase.
+    await expect(
+      engine.start({
+        tenantId: TENANT,
+        definitionId: 'refinement',
+        subjectType: 'STORY',
+        subjectId: READY_STORY.id,
+        triggeredBy: 'po@qe.ai',
+        initialContext: { story: READY_STORY },
+      }),
+    ).rejects.toThrow(/Refinement Pipeline is awaiting human approval at refinement-gatekeeper/);
+
+    // Other subjects are unaffected.
+    const other = await engine.start({
+      tenantId: TENANT,
+      definitionId: 'development',
+      subjectType: 'STORY',
+      subjectId: 'ST-OTHER',
+      triggeredBy: 'dev@qe.ai',
+      initialContext: {},
+    });
+    expect(other.status).not.toBe('FAILED');
+
+    // Resolving the approval unblocks the subject.
+    const pending = approvals.list(TENANT, 'REVIEW').filter((a) => a.subjectId === READY_STORY.id);
+    await approvals.resolve({
+      approvalId: pending[0]!.id,
+      status: 'APPROVED',
+      resolvedBy: 'po@qe.ai',
+      resolverRoles: ['PRODUCT_OWNER'],
+    });
+    expect(refinementRun.status).toBe('COMPLETED');
+    const development = await engine.start({
+      tenantId: TENANT,
+      definitionId: 'development',
+      subjectType: 'STORY',
+      subjectId: READY_STORY.id,
+      triggeredBy: 'dev@qe.ai',
+      initialContext: { story: READY_STORY },
+    });
+    expect(['COMPLETED', 'AWAITING_APPROVAL']).toContain(development.status);
+  });
+
   it('runs all five phase workflows end to end', async () => {
     const { engine, approvals } = buildPlatform();
     for (const definitionId of ['development', 'testing', 'release', 'deploy-learn']) {
