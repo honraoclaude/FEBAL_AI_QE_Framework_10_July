@@ -1,0 +1,73 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: qe-ai-web
+  namespace: qe-ai
+  labels:
+    app: qe-ai-web
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: qe-ai-web
+  template:
+    metadata:
+      labels:
+        app: qe-ai-web
+    spec:
+      containers:
+        - name: web
+          image: ghcr.io/your-org/qe-ai-web:latest
+          ports:
+            - containerPort: 80
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 250m
+              memory: 128Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: qe-ai-web
+  namespace: qe-ai
+spec:
+  selector:
+    app: qe-ai-web
+  ports:
+    - port: 80
+      targetPort: 80
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: qe-ai
+  namespace: qe-ai
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts: [app.qe-ai.example.com]
+      secretName: qe-ai-tls
+  rules:
+    - host: app.qe-ai.example.com
+      http:
+        paths:
+          - path: /api
+            pathType: Prefix
+            backend:
+              service:
+                name: qe-ai-api
+                port:
+                  number: 4000
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: qe-ai-web
+                port:
+                  number: 80

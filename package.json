@@ -1,0 +1,22 @@
+{
+  "name": "qe-ai",
+  "version": "0.1.0",
+  "private": true,
+  "description": "QE.ai — AI Agentic Quality Engineering Platform for Salesforce ecosystems",
+  "license": "UNLICENSED",
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "build": "npm run build --workspaces --if-present",
+    "test": "npm run test --workspaces --if-present",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "dev:api": "npm run dev -w @qe-ai/api",
+    "dev:web": "npm run dev -w @qe-ai/web",
+    "start:api": "npm run start -w @qe-ai/api"
+  }
+}
