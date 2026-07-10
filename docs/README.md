@@ -38,6 +38,7 @@ continuous learning.
 | 30–33 | UX Designs, Figma-ready Wireframes, Component Library, Dashboard Designs | [06-ui-ux-designs.md](06-ui-ux-designs.md) |
 | 34 | Agent Health Dashboard | [06-ui-ux-designs.md](06-ui-ux-designs.md) + `apps/web/src/pages/Agents.tsx` |
 | 35 | Complete Implementation Plan | [10-roadmaps-and-implementation.md](10-roadmaps-and-implementation.md) |
+| — | Feature Enhancement Backlog (ENH-01…25) | [11-feature-enhancements.md](11-feature-enhancements.md) |
 
 ## Running the product
 
