@@ -133,22 +133,38 @@ export class ApexTestRunner {
     if (!availability.available) {
       return { executed: false, availability, error: 'No Salesforce org available — Apex tests can only execute inside an org.' };
     }
+    const args = ['apex', 'run', 'test', ...testClasses.flatMap((t) => ['--tests', t]), '--wait', '10', '--result-format', 'json'];
+    let stdout: string;
     try {
-      const args = ['apex', 'run', 'test', ...testClasses.flatMap((t) => ['--tests', t]), '--wait', '10', '--result-format', 'json'];
-      const { stdout } = await run('sf', args, { cwd: resolve(repoPath), shell: process.platform === 'win32', maxBuffer: 10 * 1024 * 1024 });
-      const parsed = JSON.parse(stdout) as { result?: { summary?: { outcome?: string; testsRan?: number; passing?: number; failing?: number } } };
+      stdout = (await run('sf', args, { cwd: resolve(repoPath), shell: process.platform === 'win32', maxBuffer: 10 * 1024 * 1024 })).stdout;
+    } catch (error) {
+      // sf exits non-zero when tests FAIL — that is still a genuine execution.
+      const errStdout = (error as { stdout?: string }).stdout;
+      if (!errStdout) {
+        return { executed: false, availability, error: error instanceof Error ? error.message : String(error) };
+      }
+      stdout = errStdout;
+    }
+    try {
+      const parsed = JSON.parse(stdout.replace(/^﻿/, '')) as {
+        result?: {
+          summary?: { outcome?: string; testsRan?: number; passing?: number; failing?: number };
+          tests?: Array<{ FullName?: string; Outcome?: string; Message?: string | null; RunTime?: number }>;
+        };
+      };
       const summary = parsed.result?.summary;
+      if (!summary) return { executed: false, availability, error: `Unrecognised sf output: ${stdout.slice(0, 300)}` };
       return {
         executed: true,
         availability,
-        outcome: summary?.outcome,
-        testsRan: summary?.testsRan,
-        passing: summary?.passing,
-        failing: summary?.failing,
-        raw: parsed.result,
+        outcome: summary.outcome,
+        testsRan: summary.testsRan,
+        passing: summary.passing,
+        failing: summary.failing,
+        raw: parsed.result?.tests?.map((t) => ({ name: t.FullName, outcome: t.Outcome, message: t.Message, runTimeMs: t.RunTime })),
       };
-    } catch (error) {
-      return { executed: false, availability, error: error instanceof Error ? error.message : String(error) };
+    } catch {
+      return { executed: false, availability, error: `Failed to parse sf output: ${stdout.slice(0, 300)}` };
     }
   }
 }
