@@ -90,7 +90,7 @@ describe('devtools: branch review, test generation, apex execution', () => {
     if (!body.apexRun.available) {
       expect(body.apexRun.instructions.length).toBeGreaterThan(0);
     }
-  });
+  }, 120_000); // integration test: sf CLI availability checks take seconds when an org is connected
 
   it('rejects unknown refs with a clear error', async () => {
     const res = await app.inject({
@@ -118,5 +118,5 @@ describe('devtools: branch review, test generation, apex execution', () => {
       expect(body.availability.org).toBeTruthy();
       expect(typeof body.testsRan).toBe('number');
     }
-  });
+  }, 180_000); // integration test: executes real Apex tests when an org is authenticated locally
 });

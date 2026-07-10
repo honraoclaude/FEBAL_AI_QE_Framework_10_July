@@ -153,6 +153,56 @@ describe('QE.ai API', () => {
     expect(res.json().error).toMatch(/not permitted/);
   });
 
+  it('re-evaluates Three Amigos INVEST on demand, preserving history and respecting the approval freeze', async () => {
+    const stories = (await app.inject({ method: 'GET', url: '/api/v1/stories' })).json() as Array<{ id: string; jiraKey: string }>;
+    const story = stories.find((s) => s.jiraKey === 'FSC-108')!;
+
+    // Refinement run leaves the story at the human gate.
+    await app.inject({ method: 'POST', url: '/api/v1/workflows/refinement/start', payload: { subjectId: story.id } });
+
+    // Re-evaluation is frozen while the approval is pending.
+    const frozen = await app.inject({
+      method: 'POST',
+      url: '/api/v1/agents/three-amigos/reevaluate',
+      payload: { subjectId: story.id },
+    });
+    expect(frozen.statusCode).toBe(400);
+    expect(frozen.json().error).toMatch(/awaiting human approval/);
+
+    // Approve the gate, then re-evaluate twice.
+    const pending = ((await app.inject({ method: 'GET', url: '/api/v1/approvals?status=REVIEW' })).json() as Array<{ id: string; subjectId: string }>).filter(
+      (a) => a.subjectId === story.id,
+    );
+    await app.inject({
+      method: 'POST',
+      url: `/api/v1/approvals/${pending[0]!.id}/resolve`,
+      headers: { authorization: 'Bearer demo-po' },
+      payload: { status: 'APPROVED' },
+    });
+
+    for (let i = 0; i < 2; i++) {
+      const res = await app.inject({
+        method: 'POST',
+        url: '/api/v1/agents/three-amigos/reevaluate',
+        payload: { subjectId: story.id },
+      });
+      expect(res.statusCode).toBe(200);
+      const body = res.json();
+      expect(body.run.definitionId).toBe('reevaluate-three-amigos');
+      expect(body.run.status).toBe('COMPLETED');
+      expect(body.decision.agentId).toBe('three-amigos');
+      expect(body.decision.payload.invest).toBeDefined();
+    }
+
+    // Complete history preserved: 1 pipeline evaluation + 2 re-evaluations.
+    const decisions = (await app.inject({ method: 'GET', url: `/api/v1/decisions?subjectId=${story.id}` })).json() as Array<{ agentId: string }>;
+    expect(decisions.filter((d) => d.agentId === 'three-amigos').length).toBe(3);
+
+    // Unknown agents are rejected.
+    const unknown = await app.inject({ method: 'POST', url: '/api/v1/agents/not-an-agent/reevaluate', payload: { subjectId: story.id } });
+    expect(unknown.statusCode).toBe(404);
+  });
+
   it('verifies the audit chain and exports it', async () => {
     // Self-contained: generate audit events regardless of test ordering.
     const stories = (await app.inject({ method: 'GET', url: '/api/v1/stories' })).json() as Array<{ id: string; jiraKey: string }>;

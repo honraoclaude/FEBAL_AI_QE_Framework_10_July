@@ -3,6 +3,112 @@ import { api, useApi } from '../api';
 import { DecisionCard, ErrorNote, Pipeline, StatusBadge } from '../components/common';
 import type { AgentDecision, ApprovalRequest, WorkItem, WorkflowDefinition, WorkflowRun } from '../types';
 
+interface ThreeAmigosPayload {
+  invest?: Record<string, { pass: boolean; note: string }>;
+  definitionOfReadyPass?: boolean;
+  verdict?: string;
+  actions?: Array<{ role: string; action: string }>;
+}
+
+/**
+ * Three Amigos INVEST panel: complete evaluation history for the subject with
+ * on-demand re-evaluation. Every re-run is a new governed decision — nothing
+ * is overwritten (spec: approve/reject/re-evaluate with tracked history).
+ */
+function ThreeAmigosHistory({
+  subjectId,
+  subjectLabel,
+  decisions,
+  onReevaluated,
+}: {
+  subjectId: string;
+  subjectLabel: string;
+  decisions: AgentDecision[];
+  onReevaluated: () => void;
+}) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string>();
+  const history = decisions
+    .filter((d) => d.agentId === 'three-amigos')
+    .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+
+  async function reevaluate() {
+    setBusy(true);
+    setError(undefined);
+    try {
+      await api.post(`/api/v1/agents/three-amigos/reevaluate`, { subjectId });
+      onReevaluated();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Re-evaluation failed');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="card">
+      <div className="row between">
+        <h3>Three Amigos — INVEST History ({history.length} evaluation{history.length === 1 ? '' : 's'}) · {subjectLabel}</h3>
+        <button className="btn sm primary" disabled={busy} onClick={reevaluate} title="Re-run the Three Amigos workshop with fresh story data and the latest upstream analysis">
+          {busy ? 'Re-evaluating…' : '↻ Re-evaluate INVEST'}
+        </button>
+      </div>
+      {error && <div style={{ fontSize: 13, color: 'var(--status-critical)', marginTop: 8 }}>{error}</div>}
+      {history.length === 0 ? (
+        <div className="empty">No Three Amigos evaluation yet — run the refinement pipeline or click Re-evaluate.</div>
+      ) : (
+        <table className="data" style={{ marginTop: 10 }}>
+          <thead>
+            <tr>
+              <th>When</th>
+              <th>Verdict</th>
+              <th>DoR</th>
+              <th>INVEST</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            {history.map((decision, index) => {
+              const payload = decision.payload as ThreeAmigosPayload;
+              return (
+                <tr key={decision.id}>
+                  <td style={{ fontSize: 12, whiteSpace: 'nowrap' }}>
+                    {new Date(decision.createdAt).toLocaleTimeString()}
+                    {index === 0 && <span className="badge accent" style={{ marginLeft: 6 }}>latest</span>}
+                  </td>
+                  <td>
+                    <span className={`badge ${payload.verdict === 'APPROVED' ? 'good' : 'warning'}`}>{payload.verdict ?? '—'}</span>
+                  </td>
+                  <td>
+                    <span className={`badge ${payload.definitionOfReadyPass ? 'good' : 'critical'}`}>{payload.definitionOfReadyPass ? 'pass' : 'fail'}</span>
+                  </td>
+                  <td>
+                    {Object.entries(payload.invest ?? {}).map(([letter, check]) => (
+                      <span key={letter} className={`badge ${check.pass ? 'good' : 'critical'}`} style={{ marginRight: 3 }} title={check.note}>
+                        {letter[0]}
+                      </span>
+                    ))}
+                  </td>
+                  <td style={{ fontSize: 12 }}>
+                    {(payload.actions ?? []).length > 0
+                      ? (payload.actions ?? []).map((a, i) => (
+                          <div key={i}>
+                            <span className="badge" style={{ marginRight: 4 }}>{a.role}</span>
+                            {a.action}
+                          </div>
+                        ))
+                      : '—'}
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      )}
+    </div>
+  );
+}
+
 /**
  * Generic phase workspace: pick a subject, run the phase workflow, watch the
  * agent pipeline, review governed decisions, resolve human approvals inline.
@@ -147,6 +253,18 @@ export function PhasePage({ workflowId, blurb }: { workflowId: string; blurb: st
           {selectedRun ? <Pipeline run={selectedRun} /> : <div className="empty">Select a run to see its pipeline.</div>}
         </div>
       </div>
+
+      {workflowId === 'refinement' && selectedRun && (
+        <ThreeAmigosHistory
+          subjectId={selectedRun.subjectId}
+          subjectLabel={(stories.data ?? []).find((s) => s.id === selectedRun.subjectId)?.jiraKey ?? selectedRun.subjectId}
+          decisions={decisions.data ?? []}
+          onReevaluated={() => {
+            decisions.reload();
+            runs.reload();
+          }}
+        />
+      )}
 
       {selectedRun && (
         <div className="card">
