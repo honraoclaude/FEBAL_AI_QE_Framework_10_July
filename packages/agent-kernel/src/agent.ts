@@ -87,6 +87,7 @@ export abstract class BaseAgent<TPayload = unknown> implements Agent<TPayload> {
       stepId: context.stepId,
       subjectType: context.subjectType,
       subjectId: context.subjectId,
+      input: { ...context.input },
       reasoning,
       evidence: result.evidence,
       confidence: clamp(result.confidence, 0, 1),

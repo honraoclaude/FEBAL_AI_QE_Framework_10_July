@@ -102,6 +102,7 @@ export interface AgentDecision {
   id: string;
   agentId: string;
   subjectId: string;
+  input: Record<string, unknown>;
   reasoning: string;
   evidence: string[];
   confidence: number;

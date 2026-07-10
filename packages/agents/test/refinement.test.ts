@@ -136,7 +136,15 @@ describe('QE.ai agent platform', () => {
       expect(decision.confidence).toBeGreaterThan(0);
       expect(decision.promptVersion).toBe('1.0');
       expect(decision.knowledgeVersion).toMatch(/^kb-v/);
+      // Every decision snapshots the context it received (input traceability).
+      expect(decision.input).toBeDefined();
+      expect(decision.input['story']).toMatchObject({ id: READY_STORY.id });
     }
+    // Downstream agents see upstream outputs in their input snapshot.
+    const gateStep = run.steps.find((s) => s.agentId === 'refinement-gatekeeper')!;
+    const gateInput = engine.getDecision(gateStep.decisionId!)!.input;
+    expect(gateInput['story-analysis']).toBeDefined();
+    expect(gateInput['bdd-designer']).toBeDefined();
     expect(audit.verifyChain(TENANT)).toBeNull();
     expect(audit.query(TENANT, { kind: 'AGENT_DECISION' }).length).toBeGreaterThanOrEqual(7);
   });

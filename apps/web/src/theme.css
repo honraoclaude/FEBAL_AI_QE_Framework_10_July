@@ -387,6 +387,46 @@ select, input[type='text'] {
   font-size: 12px;
 }
 
+details.io {
+  margin-top: 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface-1);
+  padding: 6px 10px;
+}
+
+details.io summary {
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  user-select: none;
+  list-style: none;
+}
+
+details.io summary::before {
+  content: '▸';
+  display: inline-block;
+  margin-right: 6px;
+  color: var(--text-muted);
+  transition: transform 0.12s ease;
+}
+
+details.io[open] summary::before {
+  transform: rotate(90deg);
+}
+
+details.io summary::-webkit-details-marker {
+  display: none;
+}
+
+.io-hint {
+  font-weight: 400;
+  color: var(--text-muted);
+  margin-left: 6px;
+  font-size: 11px;
+}
+
 .confidence-meter {
   height: 6px;
   background: var(--surface-3);

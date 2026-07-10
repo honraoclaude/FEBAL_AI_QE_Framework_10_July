@@ -43,6 +43,8 @@ export interface AgentDecision<TPayload = unknown> {
   stepId?: string;
   subjectType: 'STORY' | 'EPIC' | 'RELEASE' | 'DEPLOYMENT' | 'PLATFORM';
   subjectId: string;
+  /** Snapshot of the workflow context the agent received (upstream outputs + subject data). */
+  input: Record<string, unknown>;
   reasoning: string;
   evidence: string[];
   confidence: number;
