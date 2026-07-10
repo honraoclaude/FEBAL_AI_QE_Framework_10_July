@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react';
 import type { AgentDecision, StepRun, WorkflowRun } from '../types';
+import { DecisionOutput } from './outputs';
 
 export function StatTile({ label, value, unit, badge, children }: { label: string; value: ReactNode; unit?: string; badge?: ReactNode; children?: ReactNode }) {
   return (
@@ -103,11 +104,11 @@ export function DecisionCard({ decision, onFeedback }: { decision: AgentDecision
           <JsonBlock value={decision.input} />
         )}
       </details>
-      <details className="io">
+      <details className="io" open={false}>
         <summary>
-          Output <span className="io-hint">structured payload</span>
+          Output <span className="io-hint">structured result</span>
         </summary>
-        <JsonBlock value={decision.payload} />
+        <DecisionOutput payload={decision.payload} />
       </details>
       <details className="io">
         <summary>
