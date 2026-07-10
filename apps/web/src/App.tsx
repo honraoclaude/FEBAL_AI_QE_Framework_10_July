@@ -4,6 +4,7 @@ import type { User } from './types';
 import { Dashboard } from './pages/Dashboard';
 import { SprintPage } from './pages/Sprint';
 import { BacklogPage } from './pages/Backlog';
+import { LiveWorkflowPage } from './pages/LiveWorkflow';
 import { PhasePage } from './pages/PhasePage';
 import { AgentsPage } from './pages/Agents';
 import { KnowledgePage } from './pages/Knowledge';
@@ -24,6 +25,7 @@ const NAV: Array<{ section: string; links: Array<{ to: string; label: string; ic
   {
     section: 'Delivery Pipeline',
     links: [
+      { to: '/workflow', label: 'Live Workflow', icon: '⛓' },
       { to: '/refinement', label: 'Refinement', icon: '✎' },
       { to: '/development', label: 'Development', icon: '{}' },
       { to: '/testing', label: 'Testing', icon: '✓' },
@@ -53,6 +55,7 @@ const TITLES: Record<string, string> = {
   '/': 'Dashboard',
   '/sprint': 'Current Sprint',
   '/backlog': 'Backlog',
+  '/workflow': 'Live Workflow',
   '/refinement': 'Refinement',
   '/development': 'Development',
   '/testing': 'Testing',
@@ -118,6 +121,7 @@ export default function App() {
             <Route path="/" element={<Dashboard />} />
             <Route path="/sprint" element={<SprintPage />} />
             <Route path="/backlog" element={<BacklogPage />} />
+            <Route path="/workflow" element={<LiveWorkflowPage />} />
             <Route path="/refinement" element={<PhasePage workflowId="refinement" blurb="Story analysis → Salesforce impact → Three Amigos → FCA & Consumer Duty → BDD → automation ROI → gate → human approval." />} />
             <Route path="/development" element={<PhasePage workflowId="development" blurb="Code generation → architecture validation → code/security/performance review → unit tests → coverage → gate → human approval." />} />
             <Route path="/testing" element={<PhasePage workflowId="testing" blurb="Environment validation → test data → regression selection → parallel suites → compliance → execution → defect analysis → RCA → gate." />} />

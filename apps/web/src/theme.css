@@ -475,6 +475,82 @@ details.io summary::-webkit-details-marker {
   vertical-align: -1px;
 }
 
+/* ---------- live workflow board ---------- */
+
+.board {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(215px, 1fr);
+  gap: 12px;
+  overflow-x: auto;
+  align-items: start;
+  padding-bottom: 8px;
+}
+
+.board-col {
+  background: var(--surface-1);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  min-width: 215px;
+}
+
+.board-col > header {
+  padding: 12px 14px;
+  font-size: 13px;
+  font-weight: 700;
+  border-bottom: 1px solid var(--border);
+}
+
+.board-col .col-body {
+  padding: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.step-card {
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 8px 10px;
+  cursor: default;
+}
+
+.step-card.clickable {
+  cursor: pointer;
+}
+
+.step-card.clickable:hover {
+  background: var(--surface-3);
+}
+
+.step-card .name {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text-primary);
+  line-height: 1.3;
+  overflow-wrap: anywhere;
+}
+
+.step-card .meta-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-top: 6px;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.step-card .meta-row strong {
+  color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
+}
+
+.step-card.SUCCEEDED { border-color: rgba(12, 163, 12, 0.35); }
+.step-card.FAILED { border-color: rgba(208, 59, 59, 0.45); }
+.step-card.AWAITING { border-color: rgba(250, 178, 25, 0.45); }
+.step-card.RUNNING { border-color: rgba(57, 135, 229, 0.5); }
+
 .empty {
   color: var(--text-muted);
   font-size: 13px;

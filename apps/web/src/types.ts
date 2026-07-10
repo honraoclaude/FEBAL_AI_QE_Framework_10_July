@@ -76,6 +76,8 @@ export interface StepRun {
   attempts: number;
   decisionId?: string;
   error?: string;
+  startedAt?: string;
+  finishedAt?: string;
 }
 
 export interface WorkflowRun {
