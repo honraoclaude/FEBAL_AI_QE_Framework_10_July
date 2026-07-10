@@ -3,8 +3,9 @@ import type {
   StepRun,
   WorkflowDefinition,
   WorkflowRun,
+  WorkflowStep,
 } from '@qe-ai/contracts';
-import { gatePassed, type AgentContext } from './agent.js';
+import { gatePassed, type Agent, type AgentContext } from './agent.js';
 import type { ApprovalService } from './approvals.js';
 import type { AuditTrail } from './audit.js';
 import type { EventBus } from './eventBus.js';
@@ -305,12 +306,40 @@ export class WorkflowEngine {
     }
   }
 
+  /**
+   * One step = begin → execute (with failure/retry policy) → record the
+   * governed decision → gate escalation. Each phase is a focused method.
+   */
   private async executeStep(run: WorkflowRun, index: number): Promise<'continue' | 'halt'> {
     const definition = this.definitions.get(run.definitionId)!;
     const stepDef = definition.steps[index]!;
     const stepRun = run.steps[index]!;
     const agent = this.registry.get(stepDef.agentId);
 
+    await this.beginStep(run, stepDef, stepRun);
+
+    const startedAt = Date.now();
+    let decision: AgentDecision;
+    try {
+      stepRun.attempts += 1;
+      decision = await agent.execute(this.buildAgentContext(run, stepDef));
+    } catch (error) {
+      return this.handleStepFailure(run, stepDef, stepRun, error, Date.now() - startedAt);
+    }
+
+    await this.recordDecision(run, stepDef, stepRun, agent, decision, Date.now() - startedAt);
+
+    if (await this.escalateIfHumanNeeded(run, stepDef, stepRun, agent, decision)) {
+      return 'halt';
+    }
+
+    stepRun.status = 'COMPLETED';
+    stepRun.finishedAt = nowIso();
+    return 'continue';
+  }
+
+  /** Marks the step running, announces it, and applies demo pacing. */
+  private async beginStep(run: WorkflowRun, stepDef: WorkflowStep, stepRun: StepRun): Promise<void> {
     stepRun.status = 'RUNNING';
     stepRun.startedAt = stepRun.startedAt ?? nowIso();
     this.registry.markRunning(stepDef.agentId);
@@ -323,8 +352,11 @@ export class WorkflowEngine {
     if (this.options.stepDelayMs && this.options.stepDelayMs > 0) {
       await new Promise((resolve) => setTimeout(resolve, this.options.stepDelayMs));
     }
+  }
 
-    const context: AgentContext = {
+  /** Assembles the injection context an agent receives for one step. */
+  private buildAgentContext(run: WorkflowRun, stepDef: WorkflowStep): AgentContext {
+    return {
       tenantId: run.tenantId,
       subjectType: run.subjectType,
       subjectId: run.subjectId,
@@ -335,54 +367,68 @@ export class WorkflowEngine {
       prompts: this.prompts,
       memory: this.memory,
     };
+  }
 
-    const startedAt = Date.now();
-    let decision: AgentDecision | undefined;
-    try {
-      stepRun.attempts += 1;
-      decision = await agent.execute(context);
-    } catch (error) {
-      this.registry.recordRun(stepDef.agentId, { latencyMs: Date.now() - startedAt, failed: true });
-      const message = error instanceof Error ? error.message : String(error);
-      if (stepRun.attempts <= stepDef.maxRetries) {
-        stepRun.status = 'RETRYING';
-        this.audit.record({
-          tenantId: run.tenantId,
-          kind: 'WORKFLOW_STEP',
-          actor: 'workflow-engine',
-          summary: `Step ${stepDef.id} failed (attempt ${stepRun.attempts}); retrying`,
-          workflowRunId: run.id,
-          agentId: stepDef.agentId,
-          detail: { error: message },
-        });
-        return 'continue';
-      }
-      stepRun.status = 'FAILED';
-      stepRun.error = message;
-      stepRun.finishedAt = nowIso();
-      if (stepDef.continueOnFailure) {
-        stepRun.status = 'SKIPPED';
-        return 'continue';
-      }
-      run.status = 'FAILED';
-      run.finishedAt = nowIso();
+  /** Retry / skip / fail policy for a step whose agent threw. */
+  private async handleStepFailure(
+    run: WorkflowRun,
+    stepDef: WorkflowStep,
+    stepRun: StepRun,
+    error: unknown,
+    latencyMs: number,
+  ): Promise<'continue' | 'halt'> {
+    this.registry.recordRun(stepDef.agentId, { latencyMs, failed: true });
+    const message = error instanceof Error ? error.message : String(error);
+
+    if (stepRun.attempts <= stepDef.maxRetries) {
+      stepRun.status = 'RETRYING';
       this.audit.record({
         tenantId: run.tenantId,
-        kind: 'WORKFLOW_FAILED',
+        kind: 'WORKFLOW_STEP',
         actor: 'workflow-engine',
-        summary: `Workflow failed at step ${stepDef.id}: ${message}`,
+        summary: `Step ${stepDef.id} failed (attempt ${stepRun.attempts}); retrying`,
         workflowRunId: run.id,
         agentId: stepDef.agentId,
-        subjectId: run.subjectId,
+        detail: { error: message },
       });
-      await this.bus.publish(run.tenantId, 'workflow.failed', { runId: run.id, stepId: stepDef.id }, 'workflow-engine');
-      return 'halt';
+      return 'continue';
     }
 
-    // Persist decision + context for downstream steps.
+    stepRun.status = 'FAILED';
+    stepRun.error = message;
+    stepRun.finishedAt = nowIso();
+    if (stepDef.continueOnFailure) {
+      stepRun.status = 'SKIPPED';
+      return 'continue';
+    }
+
+    run.status = 'FAILED';
+    run.finishedAt = nowIso();
+    this.audit.record({
+      tenantId: run.tenantId,
+      kind: 'WORKFLOW_FAILED',
+      actor: 'workflow-engine',
+      summary: `Workflow failed at step ${stepDef.id}: ${message}`,
+      workflowRunId: run.id,
+      agentId: stepDef.agentId,
+      subjectId: run.subjectId,
+    });
+    await this.bus.publish(run.tenantId, 'workflow.failed', { runId: run.id, stepId: stepDef.id }, 'workflow-engine');
+    return 'halt';
+  }
+
+  /** Persists the decision, updates health/memory/context, audits and announces it. */
+  private async recordDecision(
+    run: WorkflowRun,
+    stepDef: WorkflowStep,
+    stepRun: StepRun,
+    agent: Agent,
+    decision: AgentDecision,
+    latencyMs: number,
+  ): Promise<void> {
     this.decisions.set(decision.id, decision);
     stepRun.decisionId = decision.id;
-    this.registry.recordRun(stepDef.agentId, { latencyMs: Date.now() - startedAt, confidence: decision.confidence });
+    this.registry.recordRun(stepDef.agentId, { latencyMs, confidence: decision.confidence });
     this.memory.mergeWorkingMemory(run.id, { [stepDef.agentId]: decision.payload });
     run.context = this.memory.getWorkingMemory(run.id);
 
@@ -407,33 +453,40 @@ export class WorkflowEngine {
       { runId: run.id, stepId: stepDef.id, decisionId: decision.id },
       'workflow-engine',
     );
+  }
 
-    // Gatekeeper enforcement: block on explicit failure or low confidence.
+  /**
+   * Gatekeeper enforcement: pauses the run and raises a human approval when
+   * the step demands it or a gatekeeper fails / falls below the confidence
+   * threshold. Returns true when the run must halt for approval.
+   */
+  private async escalateIfHumanNeeded(
+    run: WorkflowRun,
+    stepDef: WorkflowStep,
+    stepRun: StepRun,
+    agent: Agent,
+    decision: AgentDecision,
+  ): Promise<boolean> {
     const threshold = this.options.gateConfidenceThreshold ?? 0.7;
     const needsHuman =
       stepDef.humanApproval ||
       (agent.definition.gatekeeper && (!gatePassed(decision) || decision.confidence < threshold));
+    if (!needsHuman) return false;
 
-    if (needsHuman) {
-      stepRun.status = 'AWAITING_APPROVAL';
-      run.status = 'AWAITING_APPROVAL';
-      const approval = await this.approvals.request({
-        tenantId: run.tenantId,
-        type: this.approvalTypeFor(agent.definition.phase),
-        title: `${agent.definition.name} — ${run.subjectId}`,
-        subjectType: run.subjectType,
-        subjectId: run.subjectId,
-        requestedBy: stepDef.agentId,
-        decisionId: decision.id,
-        workflowRunId: run.id,
-      });
-      this.approvalToRun.set(approval.id, run.id);
-      return 'halt';
-    }
-
-    stepRun.status = 'COMPLETED';
-    stepRun.finishedAt = nowIso();
-    return 'continue';
+    stepRun.status = 'AWAITING_APPROVAL';
+    run.status = 'AWAITING_APPROVAL';
+    const approval = await this.approvals.request({
+      tenantId: run.tenantId,
+      type: this.approvalTypeFor(agent.definition.phase),
+      title: `${agent.definition.name} — ${run.subjectId}`,
+      subjectType: run.subjectType,
+      subjectId: run.subjectId,
+      requestedBy: stepDef.agentId,
+      decisionId: decision.id,
+      workflowRunId: run.id,
+    });
+    this.approvalToRun.set(approval.id, run.id);
+    return true;
   }
 
   private async resumeAfterApproval(runId: string, approved: boolean): Promise<void> {

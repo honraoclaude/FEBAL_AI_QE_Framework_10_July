@@ -1,14 +1,14 @@
 import type { AgentRegistry, PromptLibrary, WorkflowEngine } from '@qe-ai/agent-kernel';
 import { ALL_AGENT_DEFINITIONS, REFINEMENT_AGENTS } from './catalog.js';
 import { AGENT_ASPECTS, HeuristicAgent } from './heuristics.js';
-import { createRefinementAgents } from './refinement.js';
+import { createRefinementAgents } from './refinement/index.js';
 import { ApexUnitTestGeneratorAgent, CodeReviewAgent } from './devAgents.js';
 import { ALL_WORKFLOWS } from './workflows.js';
 import { registerPrompts } from './prompts.js';
 
 export * from './catalog.js';
 export * from './heuristics.js';
-export * from './refinement.js';
+export * from './refinement/index.js';
 export * from './devAgents.js';
 export * from './apex.js';
 export * from './workflows.js';
