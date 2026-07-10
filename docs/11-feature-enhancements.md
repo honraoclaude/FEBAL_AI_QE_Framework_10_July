@@ -15,7 +15,14 @@ into visible customer value fastest. Strategic bets: ENH-05, ENH-12.
 
 ## Theme A — Agentic AI upgrades
 
-### ENH-01 · Tool-using agents `BLD`
+### ENH-01 · Tool-using agents `BLD` — ⏳ FIRST SLICE SHIPPED
+Shipped: branch-review workflow — Code Review agent performs real static
+analysis on an actual git branch diff (line-anchored findings), Apex Unit
+Test Generator emits compilable test classes to `qeai-generated-tests/`,
+and the Apex runner executes them via `sf` CLI against a connected org
+(honest `executed:false` + instructions when no org). Endpoints:
+`/api/v1/devtools/*`. Remaining: MCP tool port, Playwright/PMD/k6 runners,
+org metadata analysis (ENH-10/11).
 Agents currently reason over context; the step change is letting them **act**:
 Salesforce Impact reading real org metadata (`sfdx force:mdapi` /
 `MetadataComponentDependency`), PMD Review executing PMD, UI Testing driving

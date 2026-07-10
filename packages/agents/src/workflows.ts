@@ -103,7 +103,21 @@ export const DEPLOY_LEARN_WORKFLOW: WorkflowDefinition = {
   ],
 };
 
+/** Branch-scoped developer workflow: real static analysis + real test generation. */
+export const BRANCH_REVIEW_WORKFLOW: WorkflowDefinition = {
+  id: 'branch-review',
+  name: 'Branch Review',
+  phase: 'DEVELOPMENT',
+  description: 'Given a git branch: static Apex review of the real diff, then generation of executable Apex unit-test classes.',
+  version: 1,
+  steps: [
+    { id: 'code-review', agentId: 'code-review', maxRetries: 0 },
+    { id: 'unit-test-generation', agentId: 'apex-unit-test-generator', maxRetries: 0 },
+  ],
+};
+
 export const ALL_WORKFLOWS: WorkflowDefinition[] = [
+  BRANCH_REVIEW_WORKFLOW,
   REFINEMENT_WORKFLOW,
   DEVELOPMENT_WORKFLOW,
   TESTING_WORKFLOW,

@@ -53,6 +53,13 @@ Implementation: `apps/api/src/server.ts`; exercised by `apps/api/test/api.test.t
 | GET | `/api/v1/audit/export` | NDJSON compliance export |
 | GET/POST | `/api/v1/feedback` | Recommendation feedback loop |
 
+### Developer tools (ENH-01 slice — real branch analysis & execution)
+| Method | Path | Description |
+|---|---|---|
+| POST | `/api/v1/devtools/branch-review` | `{repoPath?, baseRef?='main', headRef, writeTests?}` — reads the **real git diff**, runs the Code Review agent (line-anchored Apex findings: SOQL/DML in loop, sharing, hardcoded IDs…) and the Apex Unit Test Generator (compilable test classes written to `<repo>/qeai-generated-tests/`), all through the governed `branch-review` workflow |
+| POST | `/api/v1/devtools/apex-test-run` | `{repoPath?, testClasses[]}` — executes tests via the Salesforce CLI against the authenticated default org; **never fakes results** — reports `executed:false` with setup instructions when no org is available |
+| GET | `/api/v1/devtools/apex-test-availability` | sf CLI + org detection |
+
 ### Knowledge
 | Method | Path | Description |
 |---|---|---|
