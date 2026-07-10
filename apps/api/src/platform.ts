@@ -71,17 +71,53 @@ export async function createPlatform(options: { seed?: boolean; stepDelayMs?: nu
   });
   bootstrapAgentPlatform(registry, engine, prompts);
 
-  // Completed refinement runs promote the story to Development Ready —
-  // event-driven so it applies to both synchronous and detached runs.
+  // Lifecycle stage progression, event-driven so it applies to synchronous
+  // and detached runs alike. Stages only move FORWARD (re-running an earlier
+  // phase never regresses a story); ad-hoc workflows (reevaluate-*,
+  // branch-review) are not in the maps and therefore never touch stages.
+  const STAGE_ORDER: WorkItemStoreStage[] = [
+    'BACKLOG',
+    'REFINEMENT',
+    'DEVELOPMENT_READY',
+    'DEVELOPMENT',
+    'TESTING_READY',
+    'TESTING',
+    'RELEASE_READY',
+    'RELEASE',
+    'DEPLOYED',
+    'LEARNING',
+  ];
+  const STAGE_ON_STARTED: Record<string, WorkItemStoreStage> = {
+    refinement: 'REFINEMENT',
+    development: 'DEVELOPMENT',
+    testing: 'TESTING',
+    release: 'RELEASE',
+  };
+  const STAGE_ON_COMPLETED: Record<string, WorkItemStoreStage> = {
+    refinement: 'DEVELOPMENT_READY',
+    development: 'TESTING_READY',
+    testing: 'RELEASE_READY',
+    release: 'RELEASE',
+    'deploy-learn': 'DEPLOYED',
+  };
+  const advanceStage = (subjectId: string, next: WorkItemStoreStage | undefined) => {
+    if (!next) return;
+    const item = workItems.get(subjectId);
+    if (!item) return;
+    if (STAGE_ORDER.indexOf(next) > STAGE_ORDER.indexOf(item.stage)) {
+      item.stage = next;
+      workItems.upsert(item);
+    }
+  };
+  bus.subscribe('workflow.started', async (event) => {
+    const { runId } = event.payload as { runId: string };
+    const run = engine.getRun(runId);
+    if (run) advanceStage(run.subjectId, STAGE_ON_STARTED[run.definitionId]);
+  });
   bus.subscribe('workflow.completed', async (event) => {
     const { runId } = event.payload as { runId: string };
     const run = engine.getRun(runId);
-    if (!run || run.definitionId !== 'refinement') return;
-    const item = workItems.get(run.subjectId);
-    if (item && (item.stage === 'BACKLOG' || item.stage === 'REFINEMENT')) {
-      item.stage = 'DEVELOPMENT_READY';
-      workItems.upsert(item);
-    }
+    if (run) advanceStage(run.subjectId, STAGE_ON_COMPLETED[run.definitionId]);
   });
 
   const jiraAdapter = new MockJiraAdapter(REMOTE_JIRA_ISSUES);

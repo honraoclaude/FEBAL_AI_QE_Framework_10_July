@@ -279,6 +279,48 @@ describe('QE.ai API', () => {
     expect(search.json().length).toBeGreaterThan(0);
   });
 
+  it('advances story lifecycle stages through phases and reflects it in dashboard story progress', async () => {
+    const stories = (await app.inject({ method: 'GET', url: '/api/v1/stories' })).json() as Array<{ id: string; jiraKey: string; stage: string }>;
+    const story = stories.find((s) => s.jiraKey === 'FSC-104')!;
+    expect(story.stage).toBe('TESTING'); // seeded from JIRA status "In Testing"
+
+    const before = ((await app.inject({ method: 'GET', url: '/api/v1/dashboard' })).json() as { storyProgress: { inTest: number } }).storyProgress;
+
+    // Complete the testing pipeline (approve its human gate).
+    await app.inject({ method: 'POST', url: '/api/v1/workflows/testing/start', payload: { subjectId: story.id } });
+    const pending = ((await app.inject({ method: 'GET', url: '/api/v1/approvals?status=REVIEW' })).json() as Array<{ id: string; subjectId: string }>).filter(
+      (a) => a.subjectId === story.id,
+    );
+    await app.inject({
+      method: 'POST',
+      url: `/api/v1/approvals/${pending[0]!.id}/resolve`,
+      headers: { authorization: 'Bearer demo-qelead' },
+      payload: { status: 'APPROVED' },
+    });
+
+    // Stage advanced: TESTING -> RELEASE_READY.
+    const after = (await app.inject({ method: 'GET', url: `/api/v1/stories/${story.id}` })).json() as { item: { stage: string } };
+    expect(after.item.stage).toBe('RELEASE_READY');
+
+    // Dashboard story progress moved with it.
+    const progress = ((await app.inject({ method: 'GET', url: '/api/v1/dashboard' })).json() as { storyProgress: { inTest: number } }).storyProgress;
+    expect(progress.inTest).toBe(before.inTest - 1);
+
+    // Forward-only: re-running an earlier phase never regresses the stage.
+    await app.inject({ method: 'POST', url: '/api/v1/workflows/development/start', payload: { subjectId: story.id } });
+    const devPending = ((await app.inject({ method: 'GET', url: '/api/v1/approvals?status=REVIEW' })).json() as Array<{ id: string; subjectId: string }>).filter(
+      (a) => a.subjectId === story.id,
+    );
+    await app.inject({
+      method: 'POST',
+      url: `/api/v1/approvals/${devPending[0]!.id}/resolve`,
+      headers: { authorization: 'Bearer demo-dev' },
+      payload: { status: 'APPROVED' },
+    });
+    const still = (await app.inject({ method: 'GET', url: `/api/v1/stories/${story.id}` })).json() as { item: { stage: string } };
+    expect(still.item.stage).toBe('RELEASE_READY');
+  });
+
   it('serves squad and leadership metrics and predictions', async () => {
     expect((await app.inject({ method: 'GET', url: '/api/v1/metrics/squad' })).statusCode).toBe(200);
     expect((await app.inject({ method: 'GET', url: '/api/v1/metrics/leadership' })).statusCode).toBe(200);

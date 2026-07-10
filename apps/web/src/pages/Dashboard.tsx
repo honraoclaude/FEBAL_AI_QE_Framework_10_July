@@ -1,4 +1,5 @@
-import { useApi } from '../api';
+import { useRef } from 'react';
+import { useApi, useEventStream } from '../api';
 import { LineChart, Meter, ProgressBar, Sparkline } from '../components/charts';
 import { ErrorNote, StatTile } from '../components/common';
 import type { AgentHealth, ApprovalRequest, DashboardSnapshot } from '../types';
@@ -7,6 +8,18 @@ export function Dashboard() {
   const snapshot = useApi<DashboardSnapshot>('/api/v1/dashboard');
   const approvals = useApi<ApprovalRequest[]>('/api/v1/approvals?status=REVIEW');
   const health = useApi<AgentHealth[]>('/api/v1/agents/health');
+
+  // Live refresh: workflow/approval/sync activity re-computes the dashboard.
+  const debounceRef = useRef<number>();
+  useEventStream((event) => {
+    if (!/^(workflow|approval|jira|decision)\./.test(event.topic)) return;
+    window.clearTimeout(debounceRef.current);
+    debounceRef.current = window.setTimeout(() => {
+      snapshot.reload();
+      approvals.reload();
+      health.reload();
+    }, 300);
+  });
 
   if (snapshot.error) return <ErrorNote error={snapshot.error} />;
   const d = snapshot.data;
