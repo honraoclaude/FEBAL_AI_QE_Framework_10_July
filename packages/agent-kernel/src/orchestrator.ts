@@ -106,6 +106,45 @@ export class WorkflowEngine {
     return this.decisions.get(decisionId);
   }
 
+  /**
+   * Human status transition on a decision (e.g. Three Amigos mark-complete /
+   * reset). Mutates the decision's approval status in place — the decision
+   * body and history stay intact — and records the transition in the audit
+   * trail and on the event bus.
+   */
+  async updateDecisionApproval(
+    decisionId: string,
+    status: 'APPROVED' | 'REJECTED' | 'PENDING',
+    actor: string,
+    note?: string,
+  ): Promise<AgentDecision> {
+    const decision = this.decisions.get(decisionId);
+    if (!decision) throw new Error(`Unknown decision: ${decisionId}`);
+    const previous = decision.approvalStatus;
+    decision.approvalStatus = status;
+    decision.approver = actor;
+
+    this.audit.record({
+      tenantId: decision.tenantId,
+      kind: 'DECISION_STATUS_CHANGED',
+      actor,
+      summary: `${decision.agentId} decision ${previous} -> ${status}${note ? ` — ${note}` : ''}`,
+      agentId: decision.agentId,
+      decisionId: decision.id,
+      workflowRunId: decision.workflowRunId,
+      subjectType: decision.subjectType,
+      subjectId: decision.subjectId,
+      detail: { previous, status, note },
+    });
+    await this.bus.publish(
+      decision.tenantId,
+      'decision.status_changed',
+      { decisionId: decision.id, agentId: decision.agentId, subjectId: decision.subjectId, status },
+      'workflow-engine',
+    );
+    return decision;
+  }
+
   listDecisions(tenantId: string, subjectId?: string): AgentDecision[] {
     let all = [...this.decisions.values()].filter((d) => d.tenantId === tenantId);
     if (subjectId) all = all.filter((d) => d.subjectId === subjectId);

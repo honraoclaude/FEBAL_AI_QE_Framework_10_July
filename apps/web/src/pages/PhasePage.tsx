@@ -26,32 +26,56 @@ function ThreeAmigosHistory({
   decisions: AgentDecision[];
   onReevaluated: () => void;
 }) {
-  const [busy, setBusy] = useState(false);
+  const [busy, setBusy] = useState<string>();
   const [error, setError] = useState<string>();
   const history = decisions
     .filter((d) => d.agentId === 'three-amigos')
     .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  const latest = history[0];
+  const workshopState =
+    latest?.approvalStatus === 'APPROVED' ? 'COMPLETE' : latest?.approvalStatus === 'PENDING' ? 'RESET — RE-EVALUATE' : latest ? 'EVALUATED' : 'NOT RUN';
 
-  async function reevaluate() {
-    setBusy(true);
+  async function invoke(action: 'reevaluate' | 'complete' | 'reset') {
+    setBusy(action);
     setError(undefined);
     try {
-      await api.post(`/api/v1/agents/three-amigos/reevaluate`, { subjectId });
+      await api.post(`/api/v1/agents/three-amigos/${action}`, { subjectId });
       onReevaluated();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Re-evaluation failed');
+      setError(err instanceof Error ? err.message : `${action} failed`);
     } finally {
-      setBusy(false);
+      setBusy(undefined);
     }
   }
 
   return (
     <div className="card">
       <div className="row between">
-        <h3>Three Amigos — INVEST History ({history.length} evaluation{history.length === 1 ? '' : 's'}) · {subjectLabel}</h3>
-        <button className="btn sm primary" disabled={busy} onClick={reevaluate} title="Re-run the Three Amigos workshop with fresh story data and the latest upstream analysis">
-          {busy ? 'Re-evaluating…' : '↻ Re-evaluate INVEST'}
-        </button>
+        <h3 className="row" style={{ gap: 8 }}>
+          Three Amigos — INVEST History ({history.length} evaluation{history.length === 1 ? '' : 's'}) · {subjectLabel}
+          <span className={`badge ${workshopState === 'COMPLETE' ? 'good' : workshopState === 'EVALUATED' ? 'accent' : 'warning'}`}>{workshopState}</span>
+        </h3>
+        <span className="row" style={{ gap: 6 }}>
+          <button className="btn sm primary" disabled={Boolean(busy)} onClick={() => invoke('reevaluate')} title="Re-run the Three Amigos workshop with fresh story data and the latest upstream analysis">
+            {busy === 'reevaluate' ? 'Re-evaluating…' : '↻ Re-evaluate'}
+          </button>
+          <button
+            className="btn sm"
+            disabled={Boolean(busy) || !latest || latest.approvalStatus === 'APPROVED'}
+            onClick={() => invoke('complete')}
+            title="Mark the workshop outcome complete (requires Product Owner or Business Analyst)"
+          >
+            {busy === 'complete' ? 'Marking…' : '✔ Mark Complete'}
+          </button>
+          <button
+            className="btn sm danger"
+            disabled={Boolean(busy) || !latest || latest.approvalStatus === 'PENDING'}
+            onClick={() => invoke('reset')}
+            title="Reset the workshop — the outcome is reopened and must be re-evaluated (requires Product Owner or Business Analyst)"
+          >
+            {busy === 'reset' ? 'Resetting…' : '⟲ Reset'}
+          </button>
+        </span>
       </div>
       {error && <div style={{ fontSize: 13, color: 'var(--status-critical)', marginTop: 8 }}>{error}</div>}
       {history.length === 0 ? (
@@ -61,6 +85,7 @@ function ThreeAmigosHistory({
           <thead>
             <tr>
               <th>When</th>
+              <th>Status</th>
               <th>Verdict</th>
               <th>DoR</th>
               <th>INVEST</th>
@@ -75,6 +100,14 @@ function ThreeAmigosHistory({
                   <td style={{ fontSize: 12, whiteSpace: 'nowrap' }}>
                     {new Date(decision.createdAt).toLocaleTimeString()}
                     {index === 0 && <span className="badge accent" style={{ marginLeft: 6 }}>latest</span>}
+                  </td>
+                  <td>
+                    <span
+                      className={`badge ${decision.approvalStatus === 'APPROVED' ? 'good' : decision.approvalStatus === 'PENDING' ? 'warning' : ''}`}
+                      title={decision.approvalStatus === 'APPROVED' ? 'Marked complete by a human approver' : decision.approvalStatus === 'PENDING' ? 'Reset — awaiting re-evaluation' : 'Agent evaluation recorded'}
+                    >
+                      {decision.approvalStatus === 'APPROVED' ? 'complete' : decision.approvalStatus === 'PENDING' ? 'reset' : 'evaluated'}
+                    </span>
                   </td>
                   <td>
                     <span className={`badge ${payload.verdict === 'APPROVED' ? 'good' : 'warning'}`}>{payload.verdict ?? '—'}</span>

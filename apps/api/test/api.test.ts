@@ -203,6 +203,44 @@ describe('QE.ai API', () => {
     expect(unknown.statusCode).toBe(404);
   });
 
+  it('marks Three Amigos complete and resets it, role-checked and audited', async () => {
+    const stories = (await app.inject({ method: 'GET', url: '/api/v1/stories' })).json() as Array<{ id: string; jiraKey: string }>;
+    const story = stories.find((s) => s.jiraKey === 'FSC-109')!;
+
+    // No workshop yet → 404 with guidance.
+    const premature = await app.inject({ method: 'POST', url: '/api/v1/agents/three-amigos/complete', headers: { authorization: 'Bearer demo-po' }, payload: { subjectId: story.id } });
+    expect(premature.statusCode).toBe(404);
+    expect(premature.json().error).toMatch(/run the workshop first/);
+
+    // Run refinement and approve the gate to unfreeze the subject.
+    await app.inject({ method: 'POST', url: '/api/v1/workflows/refinement/start', payload: { subjectId: story.id } });
+    const pending = ((await app.inject({ method: 'GET', url: '/api/v1/approvals?status=REVIEW' })).json() as Array<{ id: string; subjectId: string }>).filter((a) => a.subjectId === story.id);
+    await app.inject({ method: 'POST', url: `/api/v1/approvals/${pending[0]!.id}/resolve`, headers: { authorization: 'Bearer demo-po' }, payload: { status: 'APPROVED' } });
+
+    // Developers may not complete the workshop — PO/BA only.
+    const forbidden = await app.inject({ method: 'POST', url: '/api/v1/agents/three-amigos/complete', headers: { authorization: 'Bearer demo-dev' }, payload: { subjectId: story.id } });
+    expect(forbidden.statusCode).toBe(400);
+    expect(forbidden.json().error).toMatch(/not permitted/);
+
+    // PO marks complete.
+    const completed = await app.inject({ method: 'POST', url: '/api/v1/agents/three-amigos/complete', headers: { authorization: 'Bearer demo-po' }, payload: { subjectId: story.id } });
+    expect(completed.statusCode).toBe(200);
+    expect(completed.json().decision.approvalStatus).toBe('APPROVED');
+    expect(completed.json().decision.approver).toBe('po@meridianwealth.demo');
+
+    // BA resets: outcome reopened.
+    const reset = await app.inject({ method: 'POST', url: '/api/v1/agents/three-amigos/reset', headers: { authorization: 'Bearer demo-ba' }, payload: { subjectId: story.id } });
+    expect(reset.statusCode).toBe(200);
+    expect(reset.json().decision.approvalStatus).toBe('PENDING');
+
+    // Both transitions are in the audit trail.
+    const audit = (await app.inject({ method: 'GET', url: `/api/v1/audit?subjectId=${story.id}` })).json() as Array<{ kind: string; summary: string }>;
+    const transitions = audit.filter((e) => e.kind === 'DECISION_STATUS_CHANGED');
+    expect(transitions.length).toBe(2);
+    expect(transitions[0]!.summary).toMatch(/AUTO_APPROVED -> APPROVED/);
+    expect(transitions[1]!.summary).toMatch(/APPROVED -> PENDING/);
+  });
+
   it('verifies the audit chain and exports it', async () => {
     // Self-contained: generate audit events regardless of test ordering.
     const stories = (await app.inject({ method: 'GET', url: '/api/v1/stories' })).json() as Array<{ id: string; jiraKey: string }>;
